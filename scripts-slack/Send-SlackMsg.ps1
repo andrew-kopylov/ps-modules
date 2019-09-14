@@ -1,6 +1,20 @@
 ﻿Import-Module ($PSScriptRoot + '/modules/slack-module.ps1') -Force
 
-$HookUrl = 'https://hooks.slack.com/services/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'
-$MsgText = 'Ya.Lavka Prod 1C-server - ' + $args[0]
+$ScriptItem = $PSCommandPath | Get-Item 
 
-Send-SlackWebHook -HookUrl $HookUrl -Text $MsgText
+# Read script config parameters
+$Config = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\config.json') -Raw | ConvertFrom-Json
+$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
+
+# Msg text hooked to slac
+$AddText = ''
+if (-not [string]::IsNullOrEmpty($args[0])) {
+    $AddText = $args[0]
+}
+else {
+    $AddText = "<no message>"
+}
+
+$MsgText = $Config.hostDescr + ' - ' + $AddText
+
+Send-SlackWebHook -HookUrl $ScriptConfig.HookUrl -Text $MsgText

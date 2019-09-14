@@ -1,0 +1,6 @@
+{
+"logsDir": "c:\\1c\\logs",
+"logsArch": "c:\\archive-1c-logs",
+"storeDays": 30,
+"archExt": "7z"
+}

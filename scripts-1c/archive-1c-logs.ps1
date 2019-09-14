@@ -1,56 +1,53 @@
-﻿Import-Module ($PSScriptRoot + '\modules\7z-module.ps1') -force
+﻿Import-Module ($PSScriptRoot + '\modules\7z-module.ps1') -Force
 
-$Logs = 'C:\1c-logs'
-$LogsArc = 'C:\archive-1Cv8Log'
-$LogDays = 15
+$ScriptItem = $PSCommandPath | Get-Item 
 
-$ScriptFile = Get-Item -Path $PSCommandPath
-$DataFile = $ScriptFile.DirectoryName + '\' + $ScriptFile.BaseName + '.json'
+# Read script config parameters
+$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
+$Logs = $ScriptConfig.logsDir
+$LogsArch = $ScriptConfig.logsArch
+$StoreDays = $ScriptConfig.storeDays
+$ArchExt = $ScriptConfig.archExt
 
-$DataText = ''
-if (Test-Path -Path $DataFile) {
-    $DataText = Get-Content -Path $DataFile
-}
+$MinLogsDate = (Get-Date).AddDays(-$StoreDays)
+$MinLogsName = $MinLogsDate.ToString('yyMMddHH')
+$CurLogFileName = (Get-Date).ToString('yyMMddHH')
 
-$Data = @()
-if (-not [string]::IsNullOrEmpty($DataText)) {
-    $Data = ConvertFrom-Json -InputObject $DataText
-}
-
-$LastLogFileName = $Data.LatsLogFileName
-if ($LastLogFileName -eq $null) {
-    $LastLogFileName = ''
-}
-
-$List1Cv8Log = Get-ChildItem -Path ($SrvInfo + '\*') -Directory -Include '1Cv8Log' -Recurse
-foreach ($Item1Cv8Log in $List1Cv8Log) {
-    
-    $BaseId = $Item1Cv8Log.Parent.Name
-    $MaxLogFileName = ((Get-Date).AddDays(-$LogDays)).ToString('yyyyMMdd')
-
-    $BaseLogsDir = $LogsArc + '\' + $BaseId
-
-    if (-not (Test-Path -Path $BaseLogsDir)) {
-        $NewItem = New-Item -Path $BaseLogsDir -ItemType Directory -Force
+# Delete old acrhive files 
+if (Test-Path -Path $LogsArch) {
+    $OldArchFiles = Get-ChildItem -Path $LogsArch -File -Filter ('*.' + $ArchExt) `
+        | Where-Object -FilterScript {$_.BaseName -lt $MinLogsName}
+    foreach ($ArchFile in $OldArchFiles) {
+        Remove-Item -Path $ArchFile.FullName -Force
     }
+    # Get last archived log file name.
+    $LastArchFile = Get-ChildItem -Path $LogsArch -File -Filter ('*.' + $ArchExt) `
+        | Sort-Object -Property BaseName -Descending `
+        | Select-Object -First 1 
+    $LastArchFileBaseName = $LastArchFile[0].BaseName
+} 
+else {
+    $LastArchFileBaseName = ''
+}
 
-    $ListLogFiles = Get-ChildItem -Path ($Item1Cv8Log.FullName + '\*') -File -Include '*.lgp' | Where-Object -FilterScript {$_.BaseName -lt $MaxLogFileName} | Sort-Object -Property 'name'
-    foreach ($LogFile in $ListLogFiles) {
+if ([string]::IsNullOrEmpty($LastArchFileBaseName)) {$LastArchFileBaseName = ''}
 
-        # Move log
-        $NewLogFileName = $BaseLogsDir + '\' + $LogFile.Name        
-        Move-Item -Path $LogFile.FullName -Destination $NewLogFileName
+# Get all log files with min-max filter
+$LogFiles = Get-ChildItem -Path $Logs -Recurse -File -Filter '*.log' `
+    | Where-Object -FilterScript {$_.BaseName -ge $MinLogsName -and $_.BaseName -gt $LastArchFileBaseName -and $_.BaseName -lt $CurLogFileName} `
+    | Sort-Object -Property 'BaseName'
 
-        # Create archive
-        $LogFileArcName = $BaseLogsDir + '\' + $LogFile.BaseName + '.zip'
-        if (Test-Path -Path $NewLogFileName) {
-            Compress-7zArchive -Path $NewLogFileName -DestinationPath $LogFileArcName
-        }
+# Get unique log names set
+$UniqueBaseNames = $LogFiles | Select-Object -Property 'BaseName' -Unique
 
-        # Delete log
-        if (Test-Path -Path $LogFileArcName) {
-            Remove-Item -Path $NewLogFileName
-        }
+# Create archive directory
+if ($UniqueBaseNames.Count -gt 0 -and -not (Test-Path -Path $LogsArch)) {
+    New-Item -Path $LogsArch -ItemType Directory -Force
+}
 
-    }
+# Archive Logs
+foreach ($BaseName in $UniqueBaseNames) {
+    $ArchiveName = $LogsArch + '\' + $BaseName.BaseName + '.' + $ArchExt
+    $LogFilesMask = $Logs + '\*' + $BaseName.BaseName + '.log'
+    Compress-7zArchive -Path $LogFilesMask -DestinationPath $ArchiveName -Recurse
 }
