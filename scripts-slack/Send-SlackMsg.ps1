@@ -3,8 +3,8 @@
 $ScriptItem = $PSCommandPath | Get-Item 
 
 # Read script config parameters
-$Config = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\config.json') -Raw | ConvertFrom-Json
-$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
+$Config = Get-Content -Path ($ScriptItem.DirectoryName + '\config\config.json') -Raw | ConvertFrom-Json
+$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\config\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
 
 # Msg text hooked to slac
 $AddText = ''

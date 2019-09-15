@@ -3,7 +3,7 @@
 $ScriptItem = $PSCommandPath | Get-Item 
 
 # Read script config parameters
-$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\configs\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
+$ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\config\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
 $SrvInfo = $ScriptConfig.srvInfo
 $LogsArc = $ScriptConfig.logsArch
 $LogDays = $ScriptConfig.storeDays
