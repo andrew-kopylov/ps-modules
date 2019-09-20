@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.3.7'
+    '1.3.8'
 }
 
 function Update-1CModule ($Log) {
@@ -423,6 +423,38 @@ function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
 
 ## Public repository functions.
 
+function Invoke-1CCRCreate{
+    param (
+        $Conn,
+        [switch]$AllowConfigurationChanges, 
+        [ValidateSet('ObjectNotEditable', 'ObjectIsEditableSupportEnabled', 'ObjectNotSupported')]
+        $ChangesAllowedRule,
+        [ValidateSet('ObjectNotEditable', 'ObjectIsEditableSupportEnabled', 'ObjectNotSupported')]
+        $ChangesNotRecommendedRule,
+        [switch]$NoBind,
+        $Log
+    )
+
+    #/ConfigurationRepositoryCreate [-Extension <имя расширения>] [-AllowConfigurationChanges 
+    #-ChangesAllowedRule <Правило поддержки> -ChangesNotRecommendedRule <Правило поддержки>] [-NoBind] 
+
+    $ProcessName = 'CRCreate'
+    $ObjectsCommand = 'ConfigurationRepositoryCreate'
+
+    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryCreate';
+
+    $TArgs = @{
+        AllowConfigurationChanges = $AllowConfigurationChanges;
+        ChangesAllowedRule = $ChangesAllowedRule;
+        ChangesNotRecommendedRule = $ChangesNotRecommendedRule;
+        NoBind = $NoBind;
+    }
+
+    $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgEnter '-' -ArgsStr $ProcessArgs
+
+    Invoke-1CProcess -Conn $Conn -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Log $Log
+}
+
 function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$includeChildObjectsAll, $Log) {
 
     #/ConfigurationRepositoryUpdateCfg [-Extension <имя расширения>] [-v <номер версии хранилища>] [-revised] [-force] [-objects <имя файла со списком объектов>] 
@@ -592,6 +624,8 @@ function Parce-1CCRReport ($TXTFile) {
         CreateDate = 'Дата создания';
         CreateTime = 'Время создания';
         Comment = 'Комментарий';
+        Added = 'Добавлены';
+        Changed = 'Изменены';
     }
 
     $Report = @{
@@ -605,53 +639,72 @@ function Parce-1CCRReport ($TXTFile) {
     
     # Version, User, Date, Comment, Added (array), Changed (array)
     $ReportText = Get-Content -Path $TXTFile
+
+    $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
+    $BeginCommentPattern = '^"(?<text>(?:"")*(?:[^"]|$).*)'
+    $EndCommentPattern = '(?<text>.*(?:[^"]|^)(?:"")*)"(?:$|\s)'
     
     $Comment = $null
     $Added = $null
     $Changed = $null
 
     foreach ($RepStr in $ReportText) {
-        
+
         if ($Comment -ne $null) {
-
-            # Parce comment
-
-
-
+            if ($RepStr -match $EndCommentPattern) {
+                $Comment = $Comment + '
+                ' + $Matches.text
+                $Version.Comment = $Comment.Replace('""', '"')
+                $Comment = $null
+            }
+            else {
+                $Comment = $Comment + '
+                ' + $RepStr
+            }
         }
         elseif ($Added -ne $null) {
-
-            # Parce added objects
-
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Added = $Added
+                $Added = $null
+            } 
+            else {
+                $Added += $RepStr.Trim()
+            }
         }
         elseif ($Changed -ne $null) {
-
-            # Parce changed objects
-
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Changed = $Changed
+                $Changed = $null
+            } 
+            else {
+                $Changed += $RepStr.Trim()
+            }
         }
-        elseif ($RepStr.Contains(':')) {
+        elseif ($RepStr -match $ParamPattern) {
 
-            $Added = $null
-            $Changed = $null
-
-            $RepStrParts = $ResStr.Split(':')
-            $ParamName = ($RepStrSplit[0]).Trim()
-            $ParamValue = ($RepStrSplit[1]).Trim()
+            $ParamName = $Matches.param
+            $ParamValue = $Matches.value
 
             if ($ParamName -eq '') {
                 continue;
             }
             elseif ($ParamName -eq $RepParams.Version) {
+                
+                if ($Version -ne $null) {
+                    $Report.Versions += $Version
+                }
+
                 $Version = Get-1CCRVersionTmpl
                 $Version.Version = $ParamValue;
+
             }
             elseif ($ParamName -eq $RepParams.User) {
                 $Version.User = $ParamValue;
             }
-            elseif ($ParamName -eq $RepParams.Date) {
+            elseif ($ParamName -eq $RepParams.CreateDate) {
                 $Version.Date = $ParamValue;
             }
-            elseif ($ParamName -eq $RepParams.Time) {
+            elseif ($ParamName -eq $RepParams.CreateTime) {
                 $Version.Time = $ParamValue;
             }
             elseif ($ParamName -eq $RepParams.Added) {
@@ -661,9 +714,23 @@ function Parce-1CCRReport ($TXTFile) {
                 $Changed = @($ParamValue)
             }
             elseif ($ParamName -eq $RepParams.Comment) {
-                $Comment = [string]$ParamValue.TrimStart()
-                if ($Comment[0] = '"') {
-                    $Comment = $Comment.Substring(1)
+                $Comment = [string]$ParamValue
+                if ([String]::IsNullOrWhiteSpace($Comment)) {
+                    $Comment = $null
+                }
+                else {
+                    if ($Comment -match $BeginCommentPattern) {
+                        $Comment = $Matches.text
+                    }
+                    else {
+                        # Однострочный комментарий.
+                        $Version.Comment = $Comment
+                        $Comment = $null
+                    }
+                    if ($Comment -ne $null -and $Comment -match $EndCommentPattern) {
+                        $Version.Comment = $Matches.text.Replace('""', '"')
+                        $Comment = $null
+                    }
                 }
             }
             elseif ($ParamName -eq $RepParams.CRPath) {
@@ -679,6 +746,10 @@ function Parce-1CCRReport ($TXTFile) {
         else {
             continue
         }
+    }
+
+    if ($Version -ne $null) {
+        $Report.Versions += $Version
     }
     
     $Report
@@ -1305,6 +1376,8 @@ function Get-1CAgent($Conn, [switch]$Auth) {
 ####
 
 function Convert-1CMXLtoTXT($ComConn, $MXLFile, $TXTFile) {
+    # $ComConn - reterned by Get-1CComConnection
+    # SD - sheet document.
     $SDFileTypeTXT = (Get-ComObjectProperty -ComObject $ComConn -PropertyName 'ТипФайлаТабличногоДокумента')[3]
     $SD = Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'NewObject' -Parameters 'ТабличныйДокумент'
     Invoke-ComObjectMethod -ComObject $SD -MethodName 'Прочитать' -Parameters $MXLFile
@@ -1387,6 +1460,11 @@ function Invoke-1CProcess($ProcessName, $ProcessArgs, $Conn, $Log) {
     $ProcessArgs = Get-1CArgs -TArgs @{DumpResult = $Dump; Out = $Out} -ArgsStr $ProcessArgs -RoundValueSign '"'
 
     if ($Conn -ne $null) {
+        if (-not [String]::IsNullOrWhiteSpace($Conn.CRPath) -and [String]::IsNullOrWhiteSpace($Conn.CRUsr)) {
+            $Result = Get-1CProcessResult
+            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Err' -LogText ('Не указан пользователь хранилища: ' + $Conn.CRPath) -Result $Result -OK 0
+            return $Result
+        }
         $ConnStr = Get-1CConnString -Conn $Conn
         $ProcessArgs = $ProcessArgs.Replace('[Conn]', $ConnStr)
     }
@@ -1654,7 +1732,7 @@ function Add-LogText($LogDir, $LogName, $LogMark = '', $LogHead = '', $LogText) 
     $FullLogText
 }
 
-function Add-String([string]$Str, [string]$Add, [string]$Sep = "`n") {
+function Add-String([string]$Str, [string]$Add, [string]$Sep = '') {
     if ($Str -eq '') {$ResStr = $Add}
     elseif ($Add -eq '') {$ResStr = $Str}
     else {$ResStr = $Str + $Sep + $Add};
