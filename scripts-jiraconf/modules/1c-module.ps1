@@ -466,17 +466,6 @@ function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$in
     Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
 }
 
-function Invoke-1CCRLock($Conn, $Objects, [switch]$includeChildObjectsAll, $Revised, $Log) {
- 
-    # /ConfigurationRepositoryLock [-Extension <имя расширения>] [-objects <имя файла со списком объектов>] [-revised]
- 
-    $ProcessName = 'CRLock'
-    $ObjectsCommand = 'ConfigurationRepositoryLock'
-
-    $AddCmd = Get-1CArgs -TArgs @{revised = $Revised} -ArgEnter '-'
-    Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
-}
-
 function Invoke-1CCRCommit($Conn, $Objects, [switch]$includeChildObjectsAll, $comment, $keepLocked, $force, $Log) {
  
     # /ConfigurationRepositoryCommit [-objects <имя файла со списком объектов>] [-comment "<Текст комментария>"] [-keepLocked] [-force] [-Extension <имя расширения>]
@@ -489,6 +478,17 @@ function Invoke-1CCRCommit($Conn, $Objects, [switch]$includeChildObjectsAll, $co
     Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
 }
 
+function Invoke-1CCRLock($Conn, $Objects, [switch]$includeChildObjectsAll, $Revised, $Log) {
+ 
+    # /ConfigurationRepositoryLock [-Extension <имя расширения>] [-objects <имя файла со списком объектов>] [-revised]
+ 
+    $ProcessName = 'CRLock'
+    $ObjectsCommand = 'ConfigurationRepositoryLock'
+
+    $AddCmd = Get-1CArgs -TArgs @{revised = $Revised} -ArgEnter '-'
+    Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
+}
+
 function Invoke-1CCRUnlock($Conn, $Objects, [switch]$includeChildObjectsAll, $force, $Log) {
  
     # /ConfigurationRepositoryUnlock [-Extension <имя расширения>] [-objects <имя файла со списком объектов>] [-force]
@@ -498,47 +498,6 @@ function Invoke-1CCRUnlock($Conn, $Objects, [switch]$includeChildObjectsAll, $fo
 
     $AddCmd = Get-1CArgs -TArgs @{force = $force} -ArgEnter '-'
     Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
-}
-
-function Invoke-1CCRClearChache {
-    param(
-        $Conn,
-        [ValidateSet('All', 'Local', 'LocalDB', 'Global')]
-        [string]$ChacheType,
-        $Log
-    )
-    if ($ChacheType -eq '' -or $ChacheType.ToUpper() -eq 'ALL') {
-        $ResultLocalDB = Invoke-1CCRClearChache -Conn $Conn -ChacheType LocalDB -Log $Log
-        $ResultGlobal = Invoke-1CCRClearChache -Conn $Conn -ChacheType Global -Log $Log
-        $ResultLocal = Invoke-1CCRClearChache -Conn $Conn -ChacheType Local -Log $Log
-        $Result = Get-1CProcessResult -OK 1 -Msg ''
-        if ($ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1) {$Result.OK = 0}
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocalDB.Msg
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultGlobal.Msg
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocal.Msg
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocalDB.Out
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultGlobal.Out
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocal.Out
-    }
-    elseif ($ChacheType.ToUpper() -eq 'LocalDB'.ToUpper()) {
-        $ProcessName = 'CRClearCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearCache';
-        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
-    }
-    elseif ($ChacheType.ToUpper() -eq 'Global'.ToUpper()) {
-        $ProcessName = 'CRClearGlobalCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearGlobalCache';
-        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
-    }
-    elseif ($ChacheType.ToUpper() -eq 'Local'.ToUpper()) {
-        $ProcessName = 'CRClearLocalCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearLocalCache';
-        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
-    }
-    else {
-        $Result = Get-1CProcessResult -OK 0 -Msg 'Bad parameter value "ChacheType".'
-    }
-    $Result
 }
 
 function Invoke-1CCRAddUser {
@@ -586,6 +545,74 @@ function Invoke-1CCRCopyUsers {
     $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgsStr $ProcessArgs -ArgEnter '-' -RoundValueSign '"'
 
     Invoke-1CProcess -Conn $Conn -ProcessName 'CRCopyUsers' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+function Invoke-1CCRClearChache {
+    param(
+        $Conn,
+        [ValidateSet('All', 'Local', 'LocalDB', 'Global')]
+        [string]$ChacheType,
+        $Log
+    )
+    if ($ChacheType -eq '' -or $ChacheType.ToUpper() -eq 'ALL') {
+        $ResultLocalDB = Invoke-1CCRClearChache -Conn $Conn -ChacheType LocalDB -Log $Log
+        $ResultGlobal = Invoke-1CCRClearChache -Conn $Conn -ChacheType Global -Log $Log
+        $ResultLocal = Invoke-1CCRClearChache -Conn $Conn -ChacheType Local -Log $Log
+        $Result = Get-1CProcessResult -OK 1 -Msg ''
+        if ($ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1) {$Result.OK = 0}
+        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocalDB.Msg
+        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultGlobal.Msg
+        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocal.Msg
+        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocalDB.Out
+        $Result.Out = Add-String -Str $Result.Out -Add $ResultGlobal.Out
+        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocal.Out
+    }
+    elseif ($ChacheType.ToUpper() -eq 'LocalDB'.ToUpper()) {
+        $ProcessName = 'CRClearCache';
+        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearCache';
+        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    }
+    elseif ($ChacheType.ToUpper() -eq 'Global'.ToUpper()) {
+        $ProcessName = 'CRClearGlobalCache';
+        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearGlobalCache';
+        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    }
+    elseif ($ChacheType.ToUpper() -eq 'Local'.ToUpper()) {
+        $ProcessName = 'CRClearLocalCache';
+        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearLocalCache';
+        $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    }
+    else {
+        $Result = Get-1CProcessResult -OK 0 -Msg 'Bad parameter value "ChacheType".'
+    }
+    $Result
+}
+
+function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
+    
+    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositorySetLabel';
+
+    $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgsStr $ProcessArgs -ArgEnter '-'
+
+    if ($Lable -ne $null) {
+        $ProcessArgs = $ProcessArgs + ' -name"' + $Lable + '"'
+    }
+
+    [String[]]$CommentStrings = @();
+    if ($LableComment -is [String]) {
+        $CommentStrings = ([String]$LableComment).Split("`n")
+    }
+    elseif ($LableComment -is [System.Array]) {
+        $CommentStrings = $LableComment
+    }
+
+    if ($CommentStrings.Count -gt 0) {
+        foreach ($CommentStr in $CommentStrings) {
+            $ProcessArgs = $ProcessArgs + ' -comment"' + $CommentStr + '"'
+        }
+    }
+
+    Invoke-1CProcess -Conn $Conn -ProcessName 'CRSetLable' -ProcessArgs $ProcessArgs -Log $Log
 }
 
 function Invoke-1CCRReport {
@@ -755,6 +782,13 @@ function Parce-1CCRReport ($TXTFile) {
     $Report
 }
 
+function Invoke-1CCROptimizeData ($Conn, $Log) {
+    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryOptimizeData';
+    Invoke-1CProcess -Conn $Conn -ProcessName 'CROptimizeData' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+# Invoke CR commands.
+
 function Get-1CCRObjectsFromFile($FilePath) {
 
     [string[]]$Objects = @()
@@ -769,8 +803,6 @@ function Get-1CCRObjectsFromFile($FilePath) {
 
     $Objects
 }
-
-# Invoke CR commands.
 
 function Get-1CCRVersionTmpl {
     return @{
