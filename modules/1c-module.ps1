@@ -204,7 +204,8 @@ function Get-1CConn {
         $AgPwd,
         $ClSrvr,
         $ClUsr,
-        $ClPwd
+        $ClPwd,
+        [switch]$Visible
     )
     @{
         V8 = $V8;
@@ -224,6 +225,7 @@ function Get-1CConn {
         ClSrvr = $ClSrvr;
         ClUsr = [string]$ClUsr;
         ClPwd = [string]$ClPwd;
+        Visible = $Visible
     }
 }
 
@@ -598,9 +600,11 @@ function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
         $ProcessArgs = $ProcessArgs + ' -name"' + $Lable + '"'
     }
 
+    $CharNS = "`n"
+
     [String[]]$CommentStrings = @();
     if ($LableComment -is [String]) {
-        $CommentStrings = ([String]$LableComment).Split("`n")
+        $CommentStrings = ([String]$LableComment).Split($CharNS)
     }
     elseif ($LableComment -is [System.Array]) {
         $CommentStrings = $LableComment
@@ -608,7 +612,7 @@ function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
 
     if ($CommentStrings.Count -gt 0) {
         foreach ($CommentStr in $CommentStrings) {
-            $ProcessArgs = $ProcessArgs + ' -comment"' + $CommentStr + '"'
+            $ProcessArgs = $ProcessArgs + ' -comment"' + $CommentStr.TrimEnd() + '"'
         }
     }
 
@@ -640,7 +644,7 @@ function Invoke-1CCRReport {
     Invoke-1CProcess -Conn $Conn -ProcessName 'CRReport' -ProcessArgs $ProcessArgs -Log $Log
 }
 
-function Parce-1CCRReport ($TXTFile) {
+function Parce-1CCRReportFromMXL ($TXTFile) {
 
     $RepParams = @{
         CRPath = 'Отчет по версиям хранилища';
@@ -689,7 +693,7 @@ function Parce-1CCRReport ($TXTFile) {
                 ' + $RepStr
             }
         }
-        elseif ($Added -ne $null) {
+        elseif ($Added -is [System.Array]) {
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
                 $Version.Added = $Added
                 $Added = $null
@@ -698,7 +702,7 @@ function Parce-1CCRReport ($TXTFile) {
                 $Added += $RepStr.Trim()
             }
         }
-        elseif ($Changed -ne $null) {
+        elseif ($Changed -is [System.Array]) {
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
                 $Version.Changed = $Changed
                 $Changed = $null
@@ -769,6 +773,126 @@ function Parce-1CCRReport ($TXTFile) {
             elseif ($ParamName -eq $RepParams.RepTime) {
                 $Report.RepTime = $ParamValue;
             }
+        } # if contains ":"
+        else {
+            continue
+        }
+    }
+
+    if ($Version -ne $null) {
+        $Report.Versions += $Version
+    }
+    
+    $Report
+}
+
+function Parce-1CCRReportStd ($TXTFile) {
+
+    $RepParams = @{
+        CRPath = 'Отчет по версиям хранилища';
+        RepDate = 'Дата отчета';
+        RepTime = 'Время отчета';
+        Version = 'Версия';
+        User = 'Пользователь';
+        CreateDate = 'Дата создания';
+        CreateTime = 'Время создания';
+    }
+
+    $Report = @{
+        CRPath = '';
+        RepDate = '';
+        RepTime = '';
+        Versions = @();
+    }
+
+    $Version = $null;
+    
+    # Version, User, Date, Comment, Added (array), Changed (array)
+    $ReportText = Get-Content -Path $TXTFile
+
+    $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
+    $AddedPattern = '^\sДобавлены\s\d+'
+    $ChangedPattern = '^\sИзменены\s\d+'
+    
+    $Comment = $null
+    $Added = $null
+    $Changed = $null
+
+    foreach ($RepStr in $ReportText) {
+
+        if ($Comment -is [String]) {
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Comment = $Comment
+                $Comment = $null
+            }
+            elseif ($Comment -eq '') {
+                $Comment = $RepStr
+            }
+            else {
+                $Comment = $Comment + '
+                ' + $RepStr
+            }
+        }       
+        elseif ($Added -is [System.Array]) {
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Added = $Added
+                $Added = $null
+            } 
+            else {
+                $Added += $RepStr.Trim()
+            }
+        }
+        elseif ($Changed -is [System.Array]) {
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Changed = $Changed
+                $Changed = $null
+            } 
+            else {
+                $Changed += $RepStr.Trim()
+            }
+        }
+        elseif ($RepStr -match $ParamPattern) {
+
+            $ParamName = $Matches.param
+            $ParamValue = $Matches.value
+
+            if ($ParamName -eq '') {
+                continue;
+            }
+            elseif ($ParamName -eq $RepParams.Version) {
+                if ($Version -ne $null) {
+                    $Report.Versions += $Version
+                }
+                $Version = Get-1CCRVersionTmpl
+                $Version.Version = $ParamValue;
+            }
+            elseif ($ParamName -eq $RepParams.User) {
+                $Version.User = $ParamValue;
+            }
+            elseif ($ParamName -eq $RepParams.CreateDate) {
+                $Version.Date = $ParamValue;
+            }
+            elseif ($ParamName -eq $RepParams.CreateTime) {
+                $Version.Time = $ParamValue;
+                # Init comment reading after CreateTime string
+                $Comment = '' 
+            }
+            elseif ($ParamName -eq $RepParams.CRPath) {
+                $Report.CRPath = $ParamValue;
+            }
+            elseif ($ParamName -eq $RepParams.RepDate) {
+                $Report.RepDate = $ParamValue;
+            }
+            elseif ($ParamName -eq $RepParams.RepTime) {
+                $Report.RepTime = $ParamValue;
+            }
+
+        }
+        elseif ($RepStr -match $AddedPattern) {
+            $Added = @()
+        }
+        elseif ($RepStr -match $ChangedPattern) {
+            $Changed = @()
         } # if contains ":"
         else {
             continue
@@ -1686,6 +1810,11 @@ function Get-1CConnString($Conn) {
     $ConnStr = Add-String -str $ConnStr -Add $Base -Sep ' ';
     $ConnStr = Add-String -str $ConnStr -Add $Auth -Sep ' ';
     $ConnStr = Add-String -str $ConnStr -Add $CR -Sep ' ';
+
+    if ($Conn.Visible -eq $true) {
+        $ConnStr = Add-String -str $ConnStr -Add ' /Visible' -Sep ' ';
+    }
+
     $ConnStr 
 }
 

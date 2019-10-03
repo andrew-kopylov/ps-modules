@@ -11,7 +11,7 @@ function Create-PmCounter{
 
     $CountersString = ''
     foreach ($CounterPath in $Counters) {
-        if (-not [String]::IsNullOrWhiteSpace($CounterPath) {
+        if (-not [String]::IsNullOrWhiteSpace($CounterPath)) {
             $CountersString = $CountersString + ' "' + $CounterPath + '"'
         }
     }
@@ -49,6 +49,49 @@ function Export-PmGroup ($Name, $XMLFile) {
 
 }
 
+function Invoke-PmRelogCommand {
+    param (
+        $InputFiles,
+        [switch]$AddToExistFile,
+        $InputCounters,
+        $InputCountersFile,
+        [ValidateSet('CSV', 'TSV', 'BIN', 'SQL')]
+        $OutFormat,
+        $RecordsInterval,
+        $OutPath,
+        $Begin,
+        $End,
+        $ConfigFile,
+        [switch]$CountersListInInput
+    )
+
+    # https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/relog
+
+    # RecordsInterval - Specifies sample intervals in "N" records.
+    # Includes every nth data point in the relog file. Default is every data point
+
+    $ArgsStr = Get-PmParameterValueString -ParamVal $InputFiles -RoundValueSign '"'
+
+    $Begin = Get-PmParameterValueString -ParamVal $Begin -NullIfNull
+    $End = Get-PmParameterValueString -ParamVal $End -NullIfNull
+
+    $TArgs = [ordered]@{
+        a = $AddToExistFile;
+        c = $InputCounters;
+        cf = $InputCountersFile;
+        f = $OutFormat;
+        t = $RecordsInterval;
+        o = $OutPath;
+        b = $Begin;
+        e = $End;
+        config = $ConfigFile;
+        q = $CountersListInInput;
+        y = $true
+    }
+
+    $ArgsStr = $ArgsStr + ' ' + (Get-PmRelogParameters -Parameters $TArgs)
+    Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose
+}
 
 function Invoke-PmLogmanCommand {
     param (
@@ -98,20 +141,29 @@ function Create-PmIamAliveAlertTask {
     Register-ScheduledTask 'IamAliveAlert' -InputObject $Task -TaskPath 'PmAlerts'
 }
 
-function Get-PmParametersString($Parameters, $RoundValueSign = '') {
+function Get-PmLogmanParameters($Parameters, $RoundValueSign = '') {
+    Get-PmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $true
+}
+
+function Get-PmRelogParameters($Parameters, $RoundValueSign = '') {
+    Get-PmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $false
+}
+
+function Get-PmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOffParameters = $true) {
     $ParamStr = ''
     # Is HashTable or OrderedDictionary
     if ($Parameters -is [hashtable] -or ($Parameters -is [System.Object] -and $Parameters.GetType().name -eq 'OrderedDictionary')) {
         foreach ($ParamKey in $Parameters.Keys) {
             $ParamVal = $Parameters[$ParamKey]
-            if ($ParamVal -eq $null -or ($ParamVal -is [boolean] -and $ParamVal -eq $true)) {
-                $ParamStr = $ParamStr + ' -' + $ParamKey
+            if ($ParamVal -eq $null ) {}
+            elseif ($ParamVal -is [boolean] -or $ParamVal -is [switch]) { 
+                if ($ParamVal) {$ParamStr = $ParamStr + ' -' + $ParamKey}
             }
             elseif ($ParamVal -is [boolean] -and $ParamVal -eq $false) {
                 $ParamStr = $ParamStr + ' --' + $ParamKey # switch-off parameter
             }
             else {
-                $ParamStr = $ParamStr + ' -' + $ParamKey + ' ' + $RoundValueSign + $ParamVal + $RoundValueSign
+                $ParamStr = $ParamStr + ' -' + $ParamKey + ' ' + (Get-PmParameterValueString -ParamVal $ParamVal -RoundValueSign $RoundValueSign)
             }  
         }
     }
@@ -119,4 +171,25 @@ function Get-PmParametersString($Parameters, $RoundValueSign = '') {
         $ParamStr = ' ' + [string]$Parameters
     }
     $ParamStr
+}
+
+function Get-PmParameterValueString($ParamVal, $RoundValueSign = '', [switch]$NullIfNull) {
+    $ParamValString = ''
+    if ($ParamVal -eq $null) {
+        if ($NullIfNull) {
+            $ParamValString = $null
+        }
+    }
+    elseif ($ParamVal -is [System.Array]) {
+        foreach ($ArrItem in $ParamVal) {
+            $ParamValString = $ParamValString + ' ' + $RoundValueSign + $ArrItem + $RoundValueSign
+        }
+    }
+    elseif ($ParamVal -is [datetime]) {
+        $ParamValString = $ParamVal.ToString()
+    }
+    else {
+        $ParamValString = $RoundValueSign + $ParamVal + $RoundValueSign
+    }  
+    $ParamValString
 }

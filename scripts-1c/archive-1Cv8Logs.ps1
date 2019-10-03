@@ -4,9 +4,9 @@ $ScriptItem = $PSCommandPath | Get-Item
 
 # Read script config parameters
 $ScriptConfig = Get-Content -Path ($ScriptItem.DirectoryName + '\config\' + $ScriptItem.BaseName + '.json') -Raw | ConvertFrom-Json
-$SrvInfo = $ScriptConfig.srvInfo
+$SrvInfo = $ScriptConfig.srvinfo
+$LogDays = $ScriptConfig.logsDaysToArch
 $LogsArc = $ScriptConfig.logsArch
-$LogDays = $ScriptConfig.storeDays
 $ArchExt = $ScriptConfig.archExt
 
 $List1Cv8Log = Get-ChildItem -Path ($SrvInfo + '\*') -Directory -Include '1Cv8Log' -Recurse

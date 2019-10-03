@@ -1,6 +1,6 @@
 {
 "srvInfo": "c:\\Program Files\\1cv8\\srvinfo",
+"logsDaysToArch": 60,
 "logsArch": "c:\\archive-1Cv8Log",
-"storeDays": 60,
 "archExt": "zip"
 }
