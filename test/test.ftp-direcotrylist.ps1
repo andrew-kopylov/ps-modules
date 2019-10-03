@@ -1,9 +1,9 @@
 ﻿Import-Module D:\git\ps-modules\modules\ftp-module.ps1 -Force
 
-$ftpurl = 'ftp://ftp.selcdn.ru/lavka_1c_production_backup/'
-$ftpdir = '/cf/new2/subnew2'
-$ftpusr = '76652_lavka_1c_production_backup'
-$ftppwd = 'XcZo892yJf'
+$ftpurl = 'ftp://localhost/test'
+$ftpdir = '/subdir'
+$ftpusr = 'ftpusr'
+$ftppwd = 'tpwd1234'
 
 
 
