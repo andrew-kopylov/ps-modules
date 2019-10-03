@@ -1,4 +1,8 @@
 ﻿
+function Rename-FtpFile($Url, $Usr, $Pwd, $NewName) {
+
+}
+
 function Upload-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
 
     $Request = Get-FtpRequest -Url $Url -Usr $Usr -Pwd $Pwd -Method ([System.Net.WebRequestMethods+Ftp]::UploadFile)
