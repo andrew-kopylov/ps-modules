@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.3.8'
+    '1.3.9'
 }
 
 function Update-1CModule ($Log) {
@@ -1585,6 +1585,58 @@ function Invoke-ComObjectMethod($ComObject, $MethodName, $Parameters) {
     $MethodReturn
 }
 
+####
+# INVOKE 1C-WEBINST
+####
+
+function Invoke-1CWebInst {
+    param (
+        $Conn,
+        [ValidateSet('publish', 'delete')]
+        $Command,
+        [ValidateSet('iis', 'apache2', 'apache22', 'apache24')]
+        $Ws,
+        $WsDir,
+        $Dir,
+        $ConnStr,
+        $ConfPath,
+        $Descriptor,
+        $OAuth
+    )
+
+    if ([String]::IsNullOrEmpty($ConnStr)) {
+        $ConnStr = Get-1CBaseConnString -Conn $Conn
+    }
+
+    if ([String]::IsNullOrEmpty($WsDir)) {
+        if (-not [String]::IsNullOrEmpty($Conn.Ref)) {
+            $WsDir = $Conn.Ref
+        }
+    } 
+
+    if ([String]::IsNullOrEmpty($Dir)) {
+        if ($Ws = 'iis') {
+            $Dir = 'C:\inetpub\wwwroot\' + ([String]$WdDir).Replace('/', '\')
+        }
+    }
+
+    $TArgs = [ordered]@{}
+    $TArgs[$Command] = $true
+    $TArgs[$Ws] = $true
+    $TArgs.wsdir = $WsDir
+    $Targs.dir = Add-RoundSign -RoundSign '"' -Str $Dir
+    $TArgs.connstr = Add-RoundSign -RoundSign '"' -Str $ConnStr
+    $TArgs.confpath = Add-RoundSign -RoundSign '"' -Str $ConfPath
+    $TArgs.description = Add-RoundSign -RoundSign '"' -Str $Descriptor
+    $TArgs.OAuth = $OAuth
+
+    $ArgsList = Get-1CArgs -TArgs $TArgs -ArgEnter '-'
+
+    $WebInst = Add-ResourcePath -Path (Get-1Cv8Bin -V8 $Conn.V8) -AddPath 'webinst.exe'
+
+    Start-Process -FilePath $WebInst -ArgumentList $ArgsList -PassThru -WindowStyle Hidden
+}
+
 
 ####
 # INVOKE 1C PROCESS
@@ -1663,10 +1715,13 @@ function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $Ar
         elseif ($ArgValue -is [string]) {
             if (('[' + $ArgKey + ']').ToUpper() -eq $ArgValue.ToUpper()) {
                 # It's template: ArgValue = '[ArgKey]' then adding only ArgValue as template.
-                $ArgStr = $ArgValue;
+                $ArgStr = $ArgValue
+            }
+            elseif (([String]$ArgValue).Contains(' ')) {
+                $ArgStr = $ArgEnter + $ArgKey + $ValueSep + (Add-RoundSign -Str $ArgValue -RoundSign $RoundValueSign)
             }
             else {
-                $ArgStr = $ArgEnter + $ArgKey + $ValueSep + (Add-RoundSign -Str $ArgValue -RoundSign $RoundValueSign);
+                $ArgStr = $ArgEnter + $ArgKey + $ValueSep + $ArgValue
             }
         }
         else {
@@ -1799,6 +1854,26 @@ function Get-1CV8VerInfo($V8) {
     @{Dir = $V8Dir; Ver = $V8Ver}
 }
 
+function Get-1CBaseConnString($Conn) {
+    
+    $TArgs = [ordered]@{}
+
+    if (-not [String]::IsNullOrEmpty($Conn.File)) {
+        $TArgs.File = $Conn.File
+    }
+    else {
+        $TArgs.Srvr = $Conn.Srvr
+        $TArgs.Ref = $Conn.Ref
+    }
+
+    if (-not [String]::IsNullOrEmpty($Conn.Usr)) {
+        $TArgs.Usr = $Conn.Usr
+        $TArgs.Pwd = $Conn.Pwd
+    }
+
+    Get-1CArgs -TArgs $TArgs -ArgEnter '' -ValueSep '=' -ArgSep ';' -RoundValueSign '""'
+}
+
 function Get-1CConnString($Conn) {
     $Base = Get-1CConnStringBase -Conn $Conn
     $Auth = Get-1CConnStringAuth -Conn $Conn
@@ -1900,13 +1975,15 @@ function Add-String([string]$Str, [string]$Add, [string]$Sep = '') {
     $ResStr;
 } 
 
-function Add-RoundSign([string]$Str, [string]$RoundSign) {
+function Add-RoundSign($Str, $RoundSign) {
+    if ([String]::IsNullOrEmpty($Str)) {return $Str}
     if (-not $Str.StartsWith($RoundSign)) {$Str = $RoundSign + $Str}
     if (-not $Str.EndsWith($RoundSign)) {$Str = $Str + $RoundSign}
     $Str
 }
 
 function Remove-RoundSign([string]$Str, [string]$RoundSign) {
+    if ([String]::IsNullOrEmpty($Str)) {return $Str}
     $Str.Trim($RoundSign)   
 }
 
