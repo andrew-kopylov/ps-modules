@@ -592,6 +592,12 @@ function Invoke-1CCRClearChache {
 
 function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
     
+    $ProcessName = 'CRSetLable'
+
+    $LableSets = @($Lable, $LableComment)
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ([String]::Join(' - ', $LableSets))
+
     $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositorySetLabel';
 
     $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgsStr $ProcessArgs -ArgEnter '-'
@@ -616,7 +622,7 @@ function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
         }
     }
 
-    Invoke-1CProcess -Conn $Conn -ProcessName 'CRSetLable' -ProcessArgs $ProcessArgs -Log $Log
+    Invoke-1CProcess -Conn $Conn -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Log $Log
 }
 
 function Invoke-1CCRReport {
@@ -684,13 +690,13 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
         if ($Comment -ne $null) {
             if ($RepStr -match $EndCommentPattern) {
                 $Comment = $Comment + '
-                ' + $Matches.text
+                ' + $Matches.text.Trim()
                 $Version.Comment = $Comment.Replace('""', '"')
                 $Comment = $null
             }
             else {
                 $Comment = $Comment + '
-                ' + $RepStr
+                ' + $RepStr.Trim()
             }
         }
         elseif ($Added -is [System.Array]) {
@@ -726,17 +732,17 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
                 }
 
                 $Version = Get-1CCRVersionTmpl
-                $Version.Version = $ParamValue;
+                $Version.Version = $ParamValue.Trim();
 
             }
             elseif ($ParamName -eq $RepParams.User) {
-                $Version.User = $ParamValue;
+                $Version.User = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.CreateDate) {
-                $Version.Date = $ParamValue;
+                $Version.Date = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.CreateTime) {
-                $Version.Time = $ParamValue;
+                $Version.Time = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.Added) {
                 $Added = @($ParamValue)
@@ -755,7 +761,7 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
                     }
                     else {
                         # Однострочный комментарий.
-                        $Version.Comment = $Comment
+                        $Version.Comment = $Comment.Trim()
                         $Comment = $null
                     }
                     if ($Comment -ne $null -and $Comment -match $EndCommentPattern) {
@@ -765,13 +771,13 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
                 }
             }
             elseif ($ParamName -eq $RepParams.CRPath) {
-                $Report.CRPath = $ParamValue;
+                $Report.CRPath = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.RepDate) {
-                $Report.RepDate = $ParamValue;
+                $Report.RepDate = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.RepTime) {
-                $Report.RepTime = $ParamValue;
+                $Report.RepTime = $ParamValue.Trim();
             }
         } # if contains ":"
         else {
@@ -822,15 +828,15 @@ function Parce-1CCRReportStd ($TXTFile) {
 
         if ($Comment -is [String]) {
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Comment = $Comment
+                $Version.Comment = $Comment.Trim()
                 $Comment = $null
             }
             elseif ($Comment -eq '') {
-                $Comment = $RepStr
+                $Comment = $RepStr.Trim()
             }
             else {
                 $Comment = $Comment + '
-                ' + $RepStr
+                ' + $RepStr.Trim()
             }
         }       
         elseif ($Added -is [System.Array]) {
@@ -864,27 +870,27 @@ function Parce-1CCRReportStd ($TXTFile) {
                     $Report.Versions += $Version
                 }
                 $Version = Get-1CCRVersionTmpl
-                $Version.Version = $ParamValue;
+                $Version.Version = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.User) {
-                $Version.User = $ParamValue;
+                $Version.User = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.CreateDate) {
-                $Version.Date = $ParamValue;
+                $Version.Date = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.CreateTime) {
-                $Version.Time = $ParamValue;
+                $Version.Time = $ParamValue.Trim();
                 # Init comment reading after CreateTime string
                 $Comment = '' 
             }
             elseif ($ParamName -eq $RepParams.CRPath) {
-                $Report.CRPath = $ParamValue;
+                $Report.CRPath = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.RepDate) {
-                $Report.RepDate = $ParamValue;
+                $Report.RepDate = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.RepTime) {
-                $Report.RepTime = $ParamValue;
+                $Report.RepTime = $ParamValue.Trim();
             }
 
         }
