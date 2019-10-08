@@ -590,30 +590,30 @@ function Invoke-1CCRClearChache {
     $Result
 }
 
-function Invoke-1CCRSetLable ($Conn, $v, $Lable, $LableComment, $Log) {
+function Invoke-1CCRSetLabel ($Conn, $v, $Label, $LabelComment, $Log) {
     
-    $ProcessName = 'CRSetLable'
+    $ProcessName = 'CRSetLabel'
 
-    $LableSets = @($Lable, $LableComment)
+    $LabelSets = @($Label, $LabelComment)
 
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ([String]::Join(' - ', $LableSets))
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ([String]::Join(' - ', $LabelSets))
 
     $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositorySetLabel';
 
     $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgsStr $ProcessArgs -ArgEnter '-'
 
-    if ($Lable -ne $null) {
-        $ProcessArgs = $ProcessArgs + ' -name"' + $Lable + '"'
+    if ($Label -ne $null) {
+        $ProcessArgs = $ProcessArgs + ' -name"' + $Label + '"'
     }
 
     $CharNS = "`n"
 
     [String[]]$CommentStrings = @();
-    if ($LableComment -is [String]) {
-        $CommentStrings = ([String]$LableComment).Split($CharNS)
+    if ($LabelComment -is [String]) {
+        $CommentStrings = ([String]$LabelComment).Split($CharNS)
     }
-    elseif ($LableComment -is [System.Array]) {
-        $CommentStrings = $LableComment
+    elseif ($LabelComment -is [System.Array]) {
+        $CommentStrings = $LabelComment
     }
 
     if ($CommentStrings.Count -gt 0) {
