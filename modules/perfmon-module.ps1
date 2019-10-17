@@ -49,6 +49,79 @@ function Export-PmGroup ($Name, $XMLFile) {
 
 }
 
+function Find-PmErrorBinFiles($Path) {
+    $ErrorBinFiles = @()
+    $LogFiles = Get-ChildItem -Path $Path -Recurse -Filter '*.blg' 
+    foreach ($LogFile in $LogFiles) {
+        $TempFile = [System.IO.Path]::GetTempFileName() + '.blg'
+        $Result = Invoke-PmRelogBinFiles -InputFiles $LogFile.FullName -OutPath $TempFile -RecordsInterval 4096
+        if (Test-Path -Path $TempFile) {
+            Remove-Item -Path $TempFile
+        }
+        if ($Result.ExitCode -ne 0) {
+            $ErrorBinFiles += $LogFile.FullName
+        }
+    }
+    $ErrorBinFiles
+}
+
+function Invoke-PmRelogBinFiles {
+    
+    param (
+        $InputFiles,
+        $RecordsInterval,
+        $OutPath,
+        $WorkDir,
+        [switch]$CreateErrorCmdFile
+    )
+
+    $MaxFiles = 32
+
+    if ($InputFiles -is [System.Array] -and $InputFiles.Count -gt $MaxFiles) {
+
+        $NewInputFiles = @()
+        $Buffers = @()
+        $CurrBuffer = @()
+        $TempFiles = @()
+
+        foreach ($LogFile in $InputFiles) {
+            if ($CurrBuffer.Count -lt $MaxFiles) {
+                $CurrBuffer += $LogFile
+            }
+            else {
+                $Buffers += @{buff = $CurrBuffer}
+                $CurrBuffer = @() # clear buffer
+            }        
+        }
+        if ($CurrBuffer.Count -gt 0) {
+            $Buffers += @{buff = $CurrBuffer}
+            $CurrBuffer = @() # clear current buffer
+        }
+
+        foreach ($BufferItem in $Buffers) {
+            $OutDir = [System.IO.Path]::GetDirectoryName($OutPath)
+            $OutName = [System.IO.Path]::GetFileNameWithoutExtension($OutPath)
+            $NewTempFile = [System.IO.Path]::Combine($OutDir, $OutName + '-' + (Get-Date).ToString('HHmmss-fff') + '-tmp.blg')                                
+            $CurrReturn = Invoke-PmRelogBinFiles -InputFiles $BufferItem.buff -RecordsInterval $RecordsInterval -OutPath $NewTempFile -WorkDir $WorkDir -CreateErrorCmdFile:$CreateErrorCmdFile
+            if ($CurrReturn.ExitCode -eq 0) {
+                $TempFiles += $NewTempFile
+            }
+        }
+
+        $Return = Invoke-PmRelogBinFiles -InputFiles $TempFiles -OutPath $OutPath -WorkDir $WorkDir  -CreateErrorCmdFile:$CreateErrorCmdFile
+
+        foreach ($TempFile in $TempFiles) {
+            Remove-Item -Path $TempFile
+        }
+
+    }
+    else {
+        $Return = Invoke-PmRelogCommand -InputFiles $InputFiles -RecordsInterval $RecordsInterval -OutPath $OutPath -WorkDir $WorkDir -OutFormat BIN  -CreateErrorCmdFile:$CreateErrorCmdFile
+    }
+
+    $Return
+}
+
 function Invoke-PmRelogCommand {
     param (
         $InputFiles,
@@ -62,7 +135,9 @@ function Invoke-PmRelogCommand {
         $Begin,
         $End,
         $ConfigFile,
-        [switch]$CountersListInInput
+        [switch]$CountersListInInput,
+        $WorkDir,
+        [switch]$CreateErrorCmdFile
     )
 
     # https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/relog
@@ -90,7 +165,22 @@ function Invoke-PmRelogCommand {
     }
 
     $ArgsStr = $ArgsStr + ' ' + (Get-PmRelogParameters -Parameters $TArgs)
-    Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose
+    
+    if ([String]::IsNullOrEmpty($WorkDir)) {
+        $Process = Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose -PassThru
+    }
+    else {
+        $Process = Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose -PassThru -WorkingDirectory $WorkDir
+    }
+
+    if ($Process.ExitCode -ne 0 -and $CreateErrorCmdFile) {
+        $ErrorCmdFile = $OutPath + '_Error.cmd'
+        ('relog ' + $ArgsStr) | Out-File -FilePath $ErrorCmdFile -Encoding ascii
+        ('pause') | Out-File -FilePath $ErrorCmdFile -Encoding ascii -Append
+        'Error create output file: ' + $OutPath + ' see command file ' + $ErrorCmdFile | Out-Host
+    }
+
+    $Process
 }
 
 function Invoke-PmLogmanCommand {

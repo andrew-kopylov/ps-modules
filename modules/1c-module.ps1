@@ -594,9 +594,12 @@ function Invoke-1CCRSetLabel ($Conn, $v, $Label, $LabelComment, $Log) {
     
     $ProcessName = 'CRSetLabel'
 
-    $LabelSets = @($Label, $LabelComment)
+    $LabelSets = @($Label)
+    if (-not [String]::IsNullOrEmpty($LabelComment)) {
+        $LabelSets += $LabelComment
+    }
 
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ([String]::Join(' - ', $LabelSets))
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ('ver ' + $v + ' ' + [String]::Join(' - ', $LabelSets))
 
     $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositorySetLabel';
 
