@@ -628,6 +628,34 @@ function Invoke-1CCRSetLabel ($Conn, $v, $Label, $LabelComment, $Log) {
     Invoke-1CProcess -Conn $Conn -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Log $Log
 }
 
+function Invoke-1CCRReportTXT {
+    param(
+        $Conn,
+        $ReportFile,
+        $NBegin,
+        $NEnd,
+        [switch]$GroupByObject,
+        [switch]$GroupByComment,
+        $Log
+    )
+
+    $TempReportFileMXL = $ReportFile + '-tmp.mxl'
+
+    $Result = Invoke-1CCRReport -Conn $Conn -ReportFile $TempReportFileMXL -NBegin $NBegin -NEnd $NEnd -GroupByObject:$GroupByObject -GroupByComment:$GroupByComment -Log $Log
+    if ($Result.OK = 1 -and (Test-Path -Path $TempReportFileMXL)) {
+        $ComConn = Get-1CComConnection -Conn $Conn
+        Convert-1CMXLtoTXT -ComConn $ComConn -MXLFile $TempReportFileMXL -TXTFile $ReportFile
+        if (-not (Test-Path -Path $ReportFile)) {
+            $MsgText = 'Ошибка конвертации отчета хранилища из формата MXL в TXT.'
+            Add-1CLog -Log $Log -ProcessName 'ConvertMXLtoTXT' -LogHead 'Error' -LogText $MsgText -Result $Result -OK 0
+        }
+    }
+    if (Test-Path -Path $TempReportFileMXL) {
+        Remove-Item -Path $TempReportFileMXL
+    }
+    $Result
+}
+
 function Invoke-1CCRReport {
     param(
         $Conn,
