@@ -776,10 +776,10 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
                 $Version.Time = $ParamValue.Trim();
             }
             elseif ($ParamName -eq $RepParams.Added) {
-                $Added = @($ParamValue)
+                [String[]]$Added = @($ParamValue)
             }
             elseif ($ParamName -eq $RepParams.Changed) {
-                $Changed = @($ParamValue)
+                [String[]]$Changed = @($ParamValue)
             }
             elseif ($ParamName -eq $RepParams.Comment) {
                 $Comment = [string]$ParamValue
@@ -926,10 +926,10 @@ function Parce-1CCRReportStd ($TXTFile) {
 
         }
         elseif ($RepStr -match $AddedPattern) {
-            $Added = @()
+            [String[]]$Added = @()
         }
         elseif ($RepStr -match $ChangedPattern) {
-            $Changed = @()
+            [String[]]$Changed = @()
         } # if contains ":"
         else {
             continue
@@ -2061,19 +2061,19 @@ function Get-ValueIfNull($Value, $IfNullValue) {
 function Get-1cPropertyValues {
     param (
         $Collection,
-        $PropertyName
+        $Property
     )
     
     begin {
         $ValuesArray = @()
         if ($Collection -ne $null) {
-            $ValuesArray = ($Collection | Get-1cPropertyValues -PropertyName $PropertyName)
+            $ValuesArray = ($Collection | Get-1cPropertyValues -Property $Property)
         }
     }
 
     process {
         if ($_ -is [System.Array]) {
-            $NewValuesArray = ($_ | Get-1cPropertyValues -PropertyName $PropertyName)
+            $NewValuesArray = ($_ | Get-1cPropertyValues -Property $Property)
             foreach ($PropertyValue in $NewValuesArray) {
                 if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
                     $ValuesArray += $PropertyValue
@@ -2081,7 +2081,7 @@ function Get-1cPropertyValues {
             }
         }
         elseif ($_ -ne $null) {
-            $PropertyValue = $_[$PropertyName]
+            $PropertyValue = $_.$Property
             if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
                 $ValuesArray += $PropertyValue
             }
