@@ -1,0 +1,11 @@
+{
+	"descr": "Ya.Lavka Dev-Term",
+	"slackInfoHookUrl": "",
+	"slackAlertsHookUrl": "",
+	"v8": "8.3.14.1694",
+	"ref": "srv1c",
+	"crpath": "tcp://srv1c/yl_ut",
+	"updaterUsr": "cfg_updater",
+	"updaterPwd": "HbK1#8Pq",
+	"jiraIssuePrefix": "YL"
+}

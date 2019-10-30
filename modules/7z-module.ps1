@@ -68,7 +68,7 @@ function Invoke-7z {
 
     $ArgsStr = $Commands[$Command]
     $ArgsStr = $ArgsStr + (Get-7zSwitchesString -Switches $Switches)
-    $ArgsStr = $ArgsStr + ' ' + $ArchiveFileName
+    $ArgsStr = $ArgsStr + (Get-7zSwitchesString -Switches $ArchiveFileName)
 
     foreach ($Argument in $Arguments) {
         $ArgsStr = $ArgsStr + (Get-7zSwitchesString -Switches $Argument)
@@ -76,10 +76,11 @@ function Invoke-7z {
 
     $File7z = $env:ProgramFiles + '\7-Zip\7z.exe'
 
-    $Result = Start-Process -FilePath $File7z -ArgumentList $ArgsStr -NoNewWindow -Wait -WorkingDirectory $ArchiveDirectory
+    $Process = Start-Process -FilePath $File7z -ArgumentList $ArgsStr -NoNewWindow -Wait -WorkingDirectory $ArchiveDirectory -PassThru
 
-    $Result
+    $ArchiveCommand = '"' + $File7z + '" ' + $ArgsStr
 
+    @{Process = $Process; ExitCode = $Process.ExitCode; Cmd = $ArchiveCommand}
 }
 
 function Get-7zSwitchesString($Switches) {
@@ -96,8 +97,18 @@ function Get-7zSwitchesString($Switches) {
             }  
         }
     }
+    elseif ($Switches -is [System.Array]) {
+        foreach ($Swch in $Switches) {
+            $SwchStr = $SwchStr + ' ' + (Get-7zSwitchesString -Switches $Swch)
+        }
+    }
     else {
-        $SwchStr = ' ' + [string]$Switches
+        if ([String]$Switches -match '\s') {
+            $SwchStr = ' "' + [string]$Switches + '"'
+        }
+        else {
+            $SwchStr = ' ' + [string]$Switches
+        }
     }
     $SwchStr
 }

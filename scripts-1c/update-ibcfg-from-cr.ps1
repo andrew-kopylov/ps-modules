@@ -21,6 +21,8 @@
 
 Import-Module ($PSScriptRoot + '\modules\1c-module.ps1') -Force
 
+$PSCmdFile = Get-Item -Path $PSCommandPath
+
 # Use Slack
 $UseSlackInfo = (-not [String]::IsNullOrWhiteSpace($SlackHookUrl))
 $UseSlackAlets = (-not [String]::IsNullOrWhiteSpace($SlackHookUrlAlerts))
@@ -94,13 +96,19 @@ Add-1CLog -Log $Log -ProcessName '1CInfoBaseSessions' -LogHead 'Block' -LogText 
 Set-1CInfoBaseSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode
 
 if ($UseSlackInfo) {
-    $UpdateStage = 'Выполнена блокировка информационной базы: ' + $BaseDescr + '. ' + $BlockMsg
+    $UpdateStage = 'Установлена блокировка информационной базы: ' + $BaseDescr + '. ' + $BlockMsg
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
 
 # Delay
 Add-1CLog -Log $Log -ProcessName 'UpdateTestBasesCfg' -LogHead 'Delay' -LogText ('Minutes ' + $BlockDelayMinutes)
+
 Start-Sleep -Seconds ($BlockDelayMinutes * 60)
+
+if ($UseSlackInfo) {
+    $UpdateStage = 'Обновление базы данных... ' + $BaseDescr
+    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+}
 
 # Terminate sessions and update IB
 $Conn.UC = $PermissionCode

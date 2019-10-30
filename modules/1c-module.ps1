@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.3.9'
+    '1.3.10'
 }
 
 function Update-1CModule ($Log) {
@@ -2056,4 +2056,38 @@ function Get-ValueIfNull($Value, $IfNullValue) {
         return $IfNullValue
     }
     $Value
+}
+
+function Get-1cPropertyValues {
+    param (
+        $Collection,
+        $PropertyName
+    )
+    
+    begin {
+        $ValuesArray = @()
+        if ($Collection -ne $null) {
+            $ValuesArray = ($Collection | Get-1cPropertyValues -PropertyName $PropertyName)
+        }
+    }
+
+    process {
+        if ($_ -is [System.Array]) {
+            $NewValuesArray = ($_ | Get-1cPropertyValues -PropertyName $PropertyName)
+            foreach ($PropertyValue in $NewValuesArray) {
+                if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
+                    $ValuesArray += $PropertyValue
+                }
+            }
+        }
+        elseif ($_ -ne $null) {
+            $PropertyValue = $_[$PropertyName]
+            if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
+                $ValuesArray += $PropertyValue
+            }
+        }
+    }
+    end {
+        $ValuesArray
+    }
 }
