@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.3.11'
+    '1.4.1'
 }
 
 function Update-1CModule ($Log) {
@@ -13,7 +13,7 @@ function Update-1CModule ($Log) {
     $ProcessName = 'Update1CModule'
 
     # 1c-module URL 
-    $Url = 'https://github.com/andrew-kopylov/ps-1c/blob/master/1c-module.ps1?raw=true'
+    $Url = 'https://github.com/andrew-kopylov/ps-modules/blob/master/modules/1c-module.ps1?raw=true'
 
     # Current Powershell command file
     $PSCmdFile = Get-Item -Path $PSCommandPath
@@ -237,6 +237,115 @@ function Get-1CLog($Dir, $Name, $Dump, $ClearDump = $true) {
 
 
 ####
+# IB
+####
+
+function Invoke-1CDumpIB ($Conn, $DumpFile, $Log) {
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'DumpIB' -ProcessArgs ('"' + $DumpFile + '"') -Log $Log
+}
+
+function Invoke-1CRestoreIB ($Conn, $DumpFile, $Log) {
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'RestoreIB' -ProcessArgs ('"' + $DumpFile + '"') -Log $Log
+}
+
+function Invoke-1CIBRestoreIntegrity($Conn, $Log) {
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'IBRestoreIntegrity' -Log $Log
+}
+
+####
+# CHECKS
+####
+
+function Invoke-1CCheckConfig {
+    param (
+        $Conn,
+        [switch]$ConfigLogIntegrity,
+        [switch]$IncorrectReferences,
+        [switch]$ThinClient,
+        [switch]$WebClient,
+        [switch]$Server,
+        [switch]$ExternalConnection,
+        [switch]$ExternalConnectionServer,
+        [switch]$MobileAppClient,
+        [switch]$MobileAppServer,
+        [switch]$ThickClientManagedApplication,
+        [switch]$ThickClientServerManagedApplication,
+        [switch]$ThickClientOrdinaryApplication,
+        [switch]$ThickClientServerOrdinaryApplication,
+        [switch]$MobileClient,
+        [switch]$MobileClientDigiSign,
+        [switch]$DistributiveModules,
+        [switch]$UnreferenceProcedures,
+        [switch]$HandlersExistence,
+        [switch]$EmptyHandlers,
+        [switch]$ExtendedModulesCheck,
+        [switch]$CheckUseSynchronousCalls,
+        [switch]$CheckUseModality,
+        [switch]$UnsupportedFunctional,
+        [switch]$AllExtensions,
+        $Log
+    )
+    $ProcessArgs = [ordered]@{
+        ConfigLogIntegrity = $ConfigLogIntegrity;
+        IncorrectReferences = $IncorrectReferences;
+        ThinClient = $ThinClient;
+        WebClient = $WebClient;
+        Server = $Server;
+        ExternalConnection = $ExternalConnection;
+        ExternalConnectionServer = $ExternalConnectionServer;
+        MobileAppClient = $MobileAppClient;
+        MobileAppServer = $MobileAppServer;
+        ThickClientManagedApplication = $ThickClientManagedApplication;
+        ThickClientServerManagedApplication = $ThickClientServerManagedApplication;
+        ThickClientOrdinaryApplication = $ThickClientOrdinaryApplication;
+        ThickClientServerOrdinaryApplication = $ThickClientServerOrdinaryApplication;
+        MobileClient = $MobileClient;
+        MobileClientDigiSign = $MobileClientDigiSign;
+        DistributiveModules = $DistributiveModules;
+        UnreferenceProcedures = $UnreferenceProcedures;
+        HandlersExistence = $HandlersExistence;
+        EmptyHandlers = $EmptyHandlers;
+        ExtendedModulesCheck = $ExtendedModulesCheck;
+        CheckUseSynchronousCalls = $CheckUseSynchronousCalls;
+        CheckUseModality = $CheckUseModality;
+        UnsupportedFunctional = $UnsupportedFunctional;
+        AllExtensions = $AllExtensions
+    }
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckConfig' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+function Invoke-1CCheckModules {
+    param (
+        $Conn,
+        [switch]$ThinClient,
+        [switch]$WebClient,
+        [switch]$Server,
+        [switch]$ExternalConnection,
+        [switch]$ThickClientOrdinaryApplication,
+        [switch]$MobileAppClient,
+        [switch]$MobileAppServer,
+        [switch]$MobileClient,
+        [switch]$ExtendedModulesCheck,
+        [switch]$AllExtensions,
+        $Log
+    )
+    $ProcessArgs = [ordered]@{
+        ThinClient = $ThinClient;
+        WebClient = $WebClient;
+        Server = $Server;
+        ExternalConnection = $ExternalConnection;
+        ThickClientOrdinaryApplication = $ThickClientOrdinaryApplication;
+        MobileAppClient = $MobileAppClient;
+        MobileAppServer = $MobileAppServer;
+        MobileClient = $MobileClient;
+        ExtendedModulesCheck = $ExtendedModulesCheck;
+        AllExtensions = $AllExtensions
+    }
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckModules' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+
+####
 # COMMON CONFIGURATION COMMANDS
 ####
 
@@ -256,10 +365,9 @@ function Invoke-1CUpdateDBCfg() {
         $Server,
         $Log
     )
-    
-    $ProcessName = "UpdateDBCfg";
-    $ProcessArgs = "DESIGNER [Conn] /UpdateDBCfg";
 
+    $ProcessCommand = 'UpdateDBCfg'
+    
     $TArgs = [ordered]@{
         __Dynamic = $Dynamic
         BackgroundStart = $BackgroundStart;
@@ -280,11 +388,11 @@ function Invoke-1CUpdateDBCfg() {
     $ProcessArgs = $ProcessARgs.Replace('-Server v', '-Server -v')
     $ProcessArgs = $ProcessARgs.Replace('-Server none', '-Server')
     
-    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    $Result = Invoke-1CProcess -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Log $Log
     
     if ($Result.OK -ne 1) {
         $Msg = 'Ошибка обновление конфигурации базы данных.';
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "End.Error" -LogText $Msg -Result $Result
+        Add-1CLog -Log $Log -ProcessName $ProcessCommand -LogHead "End.Error" -LogText $Msg -Result $Result
     };
 
     $Result;      
@@ -333,7 +441,7 @@ function Invoke-1CCompareCfg {
     #    — построение отчета о сравнении конфигурации. Доступны опции:
 
     $ProcessName = "CompareCfg";
-    $ProcessArgs = "DESIGNER [Conn] /CompareCfg";
+    $ProcessArgs = "/CompareCfg";
 
     $TArgs = [ordered]@{
         FirstConfigurationType = $FirstConfigurationType;
@@ -389,34 +497,34 @@ function Invoke-1CMergeCfg {
         [switch]$Force
     }
 
-    #/MergeCfg <имя cf-файла> -Settings <имя файла настроек> 
-    #[-EnableSupport | -DisableSupport][-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs]
-    #[-force]
-    #— объединение текущей конфигурации с файлом, используя файл настроек. Доступные параметры:
+    # /MergeCfg <имя cf-файла> -Settings <имя файла настроек> [-EnableSupport | -DisableSupport]
+    # [-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs] [-force]
+ 
+    $ProcessName = 'MergeCfg';
+    $ProcessArgs = '/MergeCfg "[CfgFile]"';
+    $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
 
-    #[-EnableSupport | -DisableSupport] — выбор режима поддержки. 
-    #      При использовании параметра -EnableSupport текущая конфигурация будет поставлена на поддержку при объединении, если есть возможность. Правила поддержки должны быть указаны в файле настроек.
-    #      При использовании параметра -DisableSupport текущая конфигурация не будет поставлена на поддержку.
+    $TArgs = [ordered]@{
+        Settings = $SettingsFile;
+        EnableSupport = ($Support -like 'Enable');
+        DisableSupport = ($Support -like 'Disable');
+        IncludeObjectsByUnresolvedRefs = ($UnresolvedRefs -like 'IncludeObjects');
+        ClearUnresolvedRefs =  ($UnresolvedRefs -like 'Clear');
+        force = $Force;
+    }
+    $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgsStr $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' '
 
-    #IncludeObjectsByUnresolvedRefs — Если в настройках есть объекты, не включенные в список объединяемых и отсутствующие в основной конфигурации, на которые есть ссылки из объектов, включенных в список, то такие объекты также помечаются для объединения, и выполняется попытка продолжить объединение.
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
-    #ClearUnresolvedRefs — очищение ссылок на объекты, не включенные в список объединяемых.
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
 
-    #force — Если параметр используется, объединение будет выполнено несмотря на наличие предупреждений
-    #о применении настроек и об удаляемых объектах, на которые найдены ссылки в объектах, не участвующие в объединении.
-    #Если параметр не используется, то в описанных случаях объединение будет прервано.
-
-    #Внимание! Если в параметре командной строки требуется ввести имя файла, то следует учитывать,
-    #что при указании имени файла с полным путем все каталоги, входящие в состав пути, должны существовать.
-
-
-
+    $Result;
 }
 
 function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
 
     $ProcessName = 'DumpCfg';
-    $ProcessArgs = 'DESIGNER [Conn] /DumpCfg "[CfgFile]"';
+    $ProcessArgs = '/DumpCfg "[CfgFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
 
     Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
@@ -435,10 +543,8 @@ function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
 function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
 
     $ProcessName = 'LoadCfg';
-    $ProcessArgs = 'DESIGNER [Conn] /LoadCfg "[CfgFile]"';
+    $ProcessArgs = '/LoadCfg "[CfgFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
-
-    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
@@ -473,21 +579,14 @@ function Invoke-1CCRCreate{
     #/ConfigurationRepositoryCreate [-Extension <имя расширения>] [-AllowConfigurationChanges 
     #-ChangesAllowedRule <Правило поддержки> -ChangesNotRecommendedRule <Правило поддержки>] [-NoBind] 
 
-    $ProcessName = 'CRCreate'
-    $ObjectsCommand = 'ConfigurationRepositoryCreate'
-
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryCreate';
-
-    $TArgs = @{
+    $ProcessArgs = @{
         AllowConfigurationChanges = $AllowConfigurationChanges;
         ChangesAllowedRule = $ChangesAllowedRule;
         ChangesNotRecommendedRule = $ChangesNotRecommendedRule;
         NoBind = $NoBind;
     }
 
-    $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgEnter '-' -ArgsStr $ProcessArgs
-
-    Invoke-1CProcess -Conn $Conn -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Log $Log
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'ConfigurationRepositoryCreate' -ProcessName 'CRCreate' -ProcessArgs $ProcessArgs -Log $Log
 }
 
 function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$includeChildObjectsAll, $Log) {
@@ -546,7 +645,7 @@ function Invoke-1CCRAddUser {
         $Log
     )
 
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryAddUser';
+    $ProcessArgs = '/ConfigurationRepositoryAddUser';
 
     $TArgs = [ordered]@{
         User = ('"' + $User + '"');
@@ -569,7 +668,7 @@ function Invoke-1CCRCopyUsers {
         $Log
     )
 
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryCopyUsers';
+    $ProcessArgs = '/ConfigurationRepositoryCopyUsers';
 
     $TArgs = [ordered]@{
         Path = $Path;
@@ -604,17 +703,17 @@ function Invoke-1CCRClearChache {
     }
     elseif ($ChacheType.ToUpper() -eq 'LocalDB'.ToUpper()) {
         $ProcessName = 'CRClearCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearCache';
+        $ProcessArgs = '/ConfigurationRepositoryClearCache';
         $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
     }
     elseif ($ChacheType.ToUpper() -eq 'Global'.ToUpper()) {
         $ProcessName = 'CRClearGlobalCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearGlobalCache';
+        $ProcessArgs = '/ConfigurationRepositoryClearGlobalCache';
         $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
     }
     elseif ($ChacheType.ToUpper() -eq 'Local'.ToUpper()) {
         $ProcessName = 'CRClearLocalCache';
-        $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryClearLocalCache';
+        $ProcessArgs = '/ConfigurationRepositoryClearLocalCache';
         $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
     }
     else {
@@ -634,7 +733,7 @@ function Invoke-1CCRSetLabel ($Conn, $v, $Label, $LabelComment, $Log) {
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start' -LogText ('ver ' + $v + ' ' + [String]::Join(' - ', $LabelSets))
 
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositorySetLabel';
+    $ProcessArgs = '/ConfigurationRepositorySetLabel';
 
     $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgsStr $ProcessArgs -ArgEnter '-'
 
@@ -700,7 +799,7 @@ function Invoke-1CCRReport {
         $Log
     )
 
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryReport "[ReportFile]"';
+    $ProcessArgs = '/ConfigurationRepositoryReport "[ReportFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[ReportFile]', $ReportFile);
 
     $TArgs = [ordered]@{
@@ -977,7 +1076,7 @@ function Parce-1CCRReportStd ($TXTFile) {
 }
 
 function Invoke-1CCROptimizeData ($Conn, $Log) {
-    $ProcessArgs = 'DESIGNER [Conn] /ConfigurationRepositoryOptimizeData';
+    $ProcessArgs = '/ConfigurationRepositoryOptimizeData';
     Invoke-1CProcess -Conn $Conn -ProcessName 'CROptimizeData' -ProcessArgs $ProcessArgs -Log $Log
 }
 
@@ -1048,7 +1147,7 @@ function Get-1CCRProcessedObjectsOut([string]$OutText) {
 # Inner function.
 function Invoke-1CCRObjectsCommand($Conn, $ProcessName, $ObjectsCommand, $Objects, [switch]$includeChildObjectsAll, $AddCmd = '', $Log) {
     
-    $ProcessArgs = 'DESIGNER [Conn] /' + $ObjectsCommand + ' [objects]';
+    $ProcessArgs = '/' + $ObjectsCommand + ' [objects]';
     
     $ResultObjectsArgument = Set-1CCRObjectsArgument -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -Log $Log
     if ($ResultObjectsArgument.OK -ne 1) {Return $ResultObjectsArgument}
@@ -1668,14 +1767,16 @@ function Invoke-1CWebInst {
         $Ws,
         $WsDir,
         $Dir,
-        $ConnStr,
         $ConfPath,
         $Descriptor,
         $OAuth
     )
 
-    if ([String]::IsNullOrEmpty($ConnStr)) {
-        $ConnStr = Get-1CBaseConnString -Conn $Conn
+    if ($Conn -is [String]) {
+        $ConnStr = $Conn
+    }
+    else {
+        $ConnStr = Get-1CConnStringCommon -Conn $Conn
     }
 
     if ([String]::IsNullOrEmpty($WsDir)) {
@@ -1687,6 +1788,14 @@ function Invoke-1CWebInst {
     if ([String]::IsNullOrEmpty($Dir)) {
         if ($Ws = 'iis') {
             $Dir = 'C:\inetpub\wwwroot\' + ([String]$WdDir).Replace('/', '\')
+        }
+    }
+
+    if ($Ws = 'iis') {
+        $DefaultVrd = $Dir + '\default.vrd'
+        $DefaultVrdTemp = $DefaultVrd + '.tmp'
+        if (Test-Path -Path $DefaultVrd) {
+            Move-Item -Path $DefaultVrd -Destination $DefaultVrdTemp -Force
         }
     }
 
@@ -1704,29 +1813,79 @@ function Invoke-1CWebInst {
 
     $WebInst = Add-ResourcePath -Path (Get-1Cv8Bin -V8 $Conn.V8) -AddPath 'webinst.exe'
 
-    Start-Process -FilePath $WebInst -ArgumentList $ArgsList -PassThru -WindowStyle Hidden
-}
+    #$CommandStr = '"' + $WebInst + '" ' + $ArgsList
+    $Result = Start-Process -FilePath $WebInst -ArgumentList $ArgsList -PassThru -WindowStyle Hidden -Wait
+  
+    if ($Ws = 'iis') {
+        if (Test-Path -Path $DefaultVrdTemp) {
+            if (Test-Path -Path $DefaultVrd) {
+                Remove-Item -Path $DefaultVrdTemp -Force
+            }
+            else {
+                Move-Item -Path $DefaultVrdTemp -Destination $DefaultVrd -Force
+            }
+        }
+    }
 
+    @{WebInst = $WebInst; ArgumentList = $ArgsList; ExitCode = $Result.ExitCode}
+}
 
 ####
 # INVOKE 1C PROCESS
 ####
 
 # Invoke process 1cv8
-function Invoke-1CProcess($ProcessName, $ProcessArgs, $Conn, $Log) {
+function Invoke-1CProcess {
+    param (
+        [ValidateSet('DESIGNER', 'ENTERPRISE', 'CREATEINFOBASE')]
+        $Mode,
+        $Conn, 
+        $ProcessCommand,
+        $ProcessArgs,
+        $ProcessName,
+        $Log
+    )
+
+    if ($Mode -eq $null) {
+        $Mode = 'DESIGNER'
+    }
+   
+    $ConnStr = ''
+    if ($Conn -ne $null) {
+        if (-not [String]::IsNullOrWhiteSpace($Conn.CRPath) -and [String]::IsNullOrWhiteSpace($Conn.CRUsr)) {
+            $Result = Get-1CProcessResult
+            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Err' -LogText ('Не указан пользователь хранилища: ' + $Conn.CRPath) -Result $Result -OK 0
+            return $Result
+        }
+        $ConnStr = Get-1CConnString -Conn $Conn
+    }
+
+    if (Test-1CHashTable -Object $ProcessArgs) {
+        $ProcessArgs = Get-1CArgs -TArgs $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
+    }
+
+    $ArgList = ''
+    $ArgList = Add-String -Str $ArgList -Add $Mode -Sep ' '
+    $ArgList = Add-String -Str $ArgList -Add $ConnStr -Sep ' '
+    $ArgList = Add-String -Str $ArgList -Add $ProcessCommand -Sep ' /'
+    $ArgList = Add-String -Str $ArgList -Add $ProcessArgs -Sep ' '
+
+    if ([String]::IsNullOrEmpty($ProcessName)) {
+        $ProcessName = $ProcessCommand
+    }
    
     if ($Conn -ne $null) {
         $Base = Get-1CConnStringBase -Conn $Conn
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.Base' -LogText $Base
     }
 
-    if ($Conn.CRPath -ne '') {
+    if (-not [String]::IsNullOrEmpty($Conn.CRPath)) {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.ConfRep' -LogText $Conn.CRPath
     }
 
     $DumpDir = Get-1CLogDumpDir -Log $Log
     #$DumpGuid = (New-Guid).ToString();
-    $DumpGuid = (Get-Date).ToString('yyyyMMdd-HHmmss');
+    $DumpGuid = (Get-Date).ToString('yyyyMMdd-HHmmss-fff');
     $Dump = Add-ResourcePath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Dump.log')
     $Out = Add-ResourcePath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Out.log')
 
@@ -1735,24 +1894,15 @@ function Invoke-1CProcess($ProcessName, $ProcessArgs, $Conn, $Log) {
     }
 
     # Add dump arguments '/DumpResult' '/Out'
-    $ProcessArgs = Get-1CArgs -TArgs @{DumpResult = $Dump; Out = $Out} -ArgsStr $ProcessArgs -RoundValueSign '"'
-
-    if ($Conn -ne $null) {
-        if (-not [String]::IsNullOrWhiteSpace($Conn.CRPath) -and [String]::IsNullOrWhiteSpace($Conn.CRUsr)) {
-            $Result = Get-1CProcessResult
-            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Err' -LogText ('Не указан пользователь хранилища: ' + $Conn.CRPath) -Result $Result -OK 0
-            return $Result
-        }
-        $ConnStr = Get-1CConnString -Conn $Conn
-        $ProcessArgs = $ProcessArgs.Replace('[Conn]', $ConnStr)
-    }
-    else {
-        $ProcessArgs = $ProcessArgs.Replace('[Conn]', '')
-    }
+    $ArgList = Get-1CArgs -TArgs @{DumpResult = $Dump; Out = $Out} -ArgsStr $ArgList -RoundValueSign '"'
 
     $File1Cv8 = Get-1CV8Exe -V8 $Conn.V8
     
-    Start-Process -FilePath $File1cv8 -ArgumentList $ProcessArgs -NoNewWindow -Wait
+    $Process = Start-Process -FilePath $File1cv8 -ArgumentList $ArgList -NoNewWindow -Wait -PassThru
+    if ($Process.ExitCode -ne 0) {
+        $Msg = 'Exit code ' + $Process.ExitCode
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText $Msg
+    }
 
     $DumpValue = Get-Content -Path $Dump -Raw
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'DumpResult' -LogText $DumpValue
@@ -1770,7 +1920,7 @@ function Invoke-1CProcess($ProcessName, $ProcessArgs, $Conn, $Log) {
 }
 
 # Get arguments string.
-function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $ArgSep = ' ', $RoundValueSign = '') {
+function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $ArgSep = ' ', $RoundValueSign = '', [switch]$IsMandatoryRoundSign) {
     foreach ($ArgKey in $TArgs.Keys) {
         $ArgValue = $TArgs.($ArgKey)
 
@@ -1787,7 +1937,7 @@ function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $Ar
                 # It's template: ArgValue = '[ArgKey]' then adding only ArgValue as template.
                 $ArgStr = $ArgValue
             }
-            elseif (([String]$ArgValue).Contains(' ')) {
+            elseif ($IsMandatoryRoundSign -or ([String]$ArgValue).Contains(' ')) {
                 $ArgStr = $ArgEnter + $ArgKey + $ValueSep + (Add-RoundSign -Str $ArgValue -RoundSign $RoundValueSign)
             }
             else {
@@ -1924,7 +2074,7 @@ function Get-1CV8VerInfo($V8) {
     @{Dir = $V8Dir; Ver = $V8Ver}
 }
 
-function Get-1CBaseConnString($Conn) {
+function Get-1CBaseConnCommon($Conn) {
     
     $TArgs = [ordered]@{}
 
@@ -1941,7 +2091,8 @@ function Get-1CBaseConnString($Conn) {
         $TArgs.Pwd = $Conn.Pwd
     }
 
-    Get-1CArgs -TArgs $TArgs -ArgEnter '' -ValueSep '=' -ArgSep ';' -RoundValueSign '""'
+    $ConnString = (Get-1CArgs -TArgs $TArgs -ArgEnter '' -ValueSep '=' -ArgSep ';' -RoundValueSign '""' -IsMandatoryRoundSign) + ';'
+    $ConnString
 }
 
 function Get-1CConnString($Conn) {
@@ -2123,4 +2274,10 @@ function Get-1CPropertyValues {
     end {
         $ValuesArray
     }
+}
+
+function Test-1CHashTable ($Object) {
+    if ($Object -eq $null) {return $false}
+    # Is HashTable or OrderedDictionary
+    (($Object -is [hashtable]) -or ($Object -is [System.Object] -and $Object.GetType().name -eq 'OrderedDictionary'))
 }
