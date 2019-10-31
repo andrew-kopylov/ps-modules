@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.3.10'
+    '1.3.11'
 }
 
 function Update-1CModule ($Log) {
@@ -378,14 +378,48 @@ function Invoke-1CCompareCfg {
     $Result;      
 }
 
+function Invoke-1CMergeCfg {
+    param {
+        $CfgFile,
+        $SettingsFile,
+        [ValidateSet('Enable', 'Disable')]
+        $Support,
+        [ValidateSet('IncludeObjects', 'Clear')]
+        $UnresolvedRefs,
+        [switch]$Force
+    }
+
+    #/MergeCfg <имя cf-файла> -Settings <имя файла настроек> 
+    #[-EnableSupport | -DisableSupport][-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs]
+    #[-force]
+    #— объединение текущей конфигурации с файлом, используя файл настроек. Доступные параметры:
+
+    #[-EnableSupport | -DisableSupport] — выбор режима поддержки. 
+    #      При использовании параметра -EnableSupport текущая конфигурация будет поставлена на поддержку при объединении, если есть возможность. Правила поддержки должны быть указаны в файле настроек.
+    #      При использовании параметра -DisableSupport текущая конфигурация не будет поставлена на поддержку.
+
+    #IncludeObjectsByUnresolvedRefs — Если в настройках есть объекты, не включенные в список объединяемых и отсутствующие в основной конфигурации, на которые есть ссылки из объектов, включенных в список, то такие объекты также помечаются для объединения, и выполняется попытка продолжить объединение.
+
+    #ClearUnresolvedRefs — очищение ссылок на объекты, не включенные в список объединяемых.
+
+    #force — Если параметр используется, объединение будет выполнено несмотря на наличие предупреждений
+    #о применении настроек и об удаляемых объектах, на которые найдены ссылки в объектах, не участвующие в объединении.
+    #Если параметр не используется, то в описанных случаях объединение будет прервано.
+
+    #Внимание! Если в параметре командной строки требуется ввести имя файла, то следует учитывать,
+    #что при указании имени файла с полным путем все каталоги, входящие в состав пути, должны существовать.
+
+
+
+}
+
 function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
 
     $ProcessName = 'DumpCfg';
     $ProcessArgs = 'DESIGNER [Conn] /DumpCfg "[CfgFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
 
-    $FileItem = Get-Item -Path $CfgFile;
-    Test-AddDir -Path $FileItem.DirectoryName
+    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
@@ -404,8 +438,7 @@ function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
     $ProcessArgs = 'DESIGNER [Conn] /LoadCfg "[CfgFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
 
-    $FileItem = Get-Item -Path $CfgFile;
-    Test-AddDir -Path $FileItem.DirectoryName
+    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
@@ -2058,7 +2091,7 @@ function Get-ValueIfNull($Value, $IfNullValue) {
     $Value
 }
 
-function Get-1cPropertyValues {
+function Get-1CPropertyValues {
     param (
         $Collection,
         $Property
