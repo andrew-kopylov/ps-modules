@@ -241,8 +241,7 @@ function Get-PmRelogParameters($Parameters, $RoundValueSign = '') {
 
 function Get-PmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOffParameters = $true) {
     $ParamStr = ''
-    # Is HashTable or OrderedDictionary
-    if ($Parameters -is [hashtable] -or ($Parameters -is [System.Object] -and $Parameters.GetType().name -eq 'OrderedDictionary')) {
+    if (Test-PmHashTable -Object $Parameters) {
         foreach ($ParamKey in $Parameters.Keys) {
             $ParamVal = $Parameters[$ParamKey]
             if ($ParamVal -eq $null ) {}
@@ -282,4 +281,10 @@ function Get-PmParameterValueString($ParamVal, $RoundValueSign = '', [switch]$Nu
         $ParamValString = $RoundValueSign + $ParamVal + $RoundValueSign
     }  
     $ParamValString
+}
+
+function Test-PmHashTable ($Object) {
+    if ($Object -eq $null) {return $false}
+    # Is HashTable or OrderedDictionary
+    (($Object -is [hashtable]) -or ($Object -is [System.Object] -and $Object.GetType().name -eq 'OrderedDictionary'))
 }
