@@ -1787,7 +1787,7 @@ function Invoke-1CWebInst {
 
     if ([String]::IsNullOrEmpty($Dir)) {
         if ($Ws = 'iis') {
-            $Dir = 'C:\inetpub\wwwroot\' + ([String]$WdDir).Replace('/', '\')
+            $Dir = 'C:\inetpub\wwwroot\' + ([String]$WsDir).Replace('/', '\')
         }
     }
 
@@ -2074,7 +2074,7 @@ function Get-1CV8VerInfo($V8) {
     @{Dir = $V8Dir; Ver = $V8Ver}
 }
 
-function Get-1CBaseConnCommon($Conn) {
+function Get-1CConnStringCommon($Conn) {
     
     $TArgs = [ordered]@{}
 
