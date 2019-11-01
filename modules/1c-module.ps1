@@ -13,7 +13,7 @@ function Update-1CModule ($Log) {
     $ProcessName = 'Update1CModule'
 
     # 1c-module URL 
-    $Url = 'https://github.com/andrew-kopylov/ps-modules/blob/master/modules/1c-module.ps1?raw=true'
+    $Url = 'https://raw.githubusercontent.com/andrew-kopylov/ps-modules/master/modules/1c-module.ps1'
 
     # Current Powershell command file
     $PSCmdFile = Get-Item -Path $PSCommandPath
