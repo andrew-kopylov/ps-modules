@@ -92,7 +92,7 @@ $OutFileAutoObjects = $PSCmdFile.DirectoryName + '\' + $OutFileBaseName + $OutFi
 Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'out' -LogText $OutFile
 
 # Move last out-files to archive
-$OutFileAchiveDir = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + 'Archive'
+$OutFileAchiveDir = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-Archive'
 $OutFilesToAchiveList = Get-ChildItem -Path $PSCmdFile.DirectoryName -Filter ($OutFileBaseName + '*')
 if (-not (Test-Path -Path $OutFileAchiveDir)) {New-Item -Path $OutFileAchiveDir -ItemType Directory -Force}
 foreach ($OutFileToArchive in $OutFilesToAchiveList) {
@@ -143,7 +143,7 @@ if ($DoUploadCRReport) {
     $RepData = Parce-1CCRReportFromMXL -TXTFile $RepFile
 
     if ($RepData -eq $null) {
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'ParceCRReport' -LogText ('Error: data is null')
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'ParceCRReport.Error' -LogText ('Data is null')
         break
     }
 
