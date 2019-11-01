@@ -1765,7 +1765,7 @@ function Invoke-1CWebInst {
         $Command,
         [ValidateSet('iis', 'apache2', 'apache22', 'apache24')]
         $Ws,
-        $WsDir,
+        $WsPath,
         $Dir,
         $ConfPath,
         $Descriptor,
@@ -1785,9 +1785,12 @@ function Invoke-1CWebInst {
         }
     } 
 
-    if ([String]::IsNullOrEmpty($Dir)) {
-        if ($Ws = 'iis') {
-            $Dir = 'C:\inetpub\wwwroot\' + ([String]$WsDir).Replace('/', '\')
+    if ($Ws = 'iis') {
+        if ([String]::IsNullOrEmpty($Dir)) {
+            $Dir = Add-ResourcePath -Path 'C:\inetpub\wwwroot\' -AddPath ([String]$WsPath).Replace('/', '\')
+        }
+        elseif (-not ($dir -like '?:\*') -and -not ($dir -like '\\*')) {
+            $Dir = Add-ResourcePath -Path 'C:\inetpub\wwwroot\' -AddPath $Dir
         }
     }
 
@@ -1802,7 +1805,7 @@ function Invoke-1CWebInst {
     $TArgs = [ordered]@{}
     $TArgs[$Command] = $true
     $TArgs[$Ws] = $true
-    $TArgs.wsdir = $WsDir
+    $TArgs.wsdir = $WsPath
     $Targs.dir = Add-RoundSign -RoundSign '"' -Str $Dir
     $TArgs.connstr = Add-RoundSign -RoundSign '"' -Str $ConnStr
     $TArgs.confpath = Add-RoundSign -RoundSign '"' -Str $ConfPath
