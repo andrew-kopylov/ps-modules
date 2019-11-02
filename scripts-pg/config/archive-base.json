@@ -1,5 +1,5 @@
 {
 	"archive": "d:\\pgdata\\archive-base\\10.9",
-	"log": "d:\\pgdata\\archive-base\\log",
+	"log": "d:\\pgdata\\archive-base\\logs",
 	"compress": true
 }
