@@ -19,7 +19,7 @@ function Update-1CModule ($Log) {
     $PSCmdFile = Get-Item -Path $PSCommandPath
 
     # Out-File
-    $OutFilePath = Add-ResourcePath -Path $PSCmdFile.DirectoryName -AddPath ($PSCmdFile.BaseName + '-update' + $PSCmdFile.Extension)
+    $OutFilePath = Add-1CPath -Path $PSCmdFile.DirectoryName -AddPath ($PSCmdFile.BaseName + '-update' + $PSCmdFile.Extension)
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Download' -LogText 'Start'
 
@@ -49,12 +49,12 @@ function Update-1CModule ($Log) {
 
     # Copy current module.
     [string]$CopyFileTmpl = $PSCmdFile.BaseName + '-old-[datetime]' + $PSCmdFile.Extension
-    $CopyFilePath = Add-ResourcePath -Path $PSCmdFile.DirectoryName -AddPath ($CopyFileTmpl.Replace('[datetime]', (Get-Date).ToString('yyyyMMdd-HHmmss')))
+    $CopyFilePath = Add-1CPath -Path $PSCmdFile.DirectoryName -AddPath ($CopyFileTmpl.Replace('[datetime]', (Get-Date).ToString('yyyyMMdd-HHmmss')))
     Rename-Item -Path $PSCmdFile.FullName -NewName $CopyFilePath
  
     # Remove old copies of module...
     $MaxCopiesCount = 3;
-    $CopyFileMask = Add-ResourcePath -Path $PSCmdFile.DirectoryName -AddPath ($CopyFileTmpl.Replace('[datetime]', '*'))
+    $CopyFileMask = Add-1CPath -Path $PSCmdFile.DirectoryName -AddPath ($CopyFileTmpl.Replace('[datetime]', '*'))
     $AllCopyFiles = Get-Item -Path $CopyFileMask
     if ($AllCopyFiles.Count -gt $MaxCopiesCount) {
         $AllCopyFiles | Select-Object -First ($AllCopyFiles.Count - $MaxCopiesCount) | Remove-Item -Force
@@ -1318,7 +1318,7 @@ function Set-1CCRObjectsArgument($ProcessName, $ProcessArgs, $Objects, [switch]$
     }
     else {
         $DumpGuid = (Get-Date).ToString('yyyyMMdd-HHmmss');
-        $DumpObjectsFile = Add-ResourcePath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Objects-Dump.xml')
+        $DumpObjectsFile = Add-1CPath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Objects-Dump.xml')
         $SaveResult = Save-1CObjectListFile -Objects $Objects -FileName $DumpObjectsFile -includeChildObjectsAll:$includeChildObjectsAll
         $ProcessArgs = $ProcessArgs.Replace('[objects]', '-objects "' + $DumpObjectsFile + '"')
         if (-not $Log.ClearDump) {
@@ -1731,7 +1731,7 @@ function Get-1CComConnectionString($Conn) {
 
 function Register-1CComConnector($V8) {
     $BinDir = Get-1CV8Bin -V8 $V8
-    $DllPath = Add-ResourcePath -Path $BinDir -AddPath 'comcntr.dll'
+    $DllPath = Add-1CPath -Path $BinDir -AddPath 'comcntr.dll'
     $ProcessArgs = '/s "' + $DllPath + '"'
     Start-Process -FilePath 'regsvr32.exe' -ArgumentList $ProcessArgs -NoNewWindow
 }
@@ -1787,10 +1787,10 @@ function Invoke-1CWebInst {
 
     if ($Ws = 'iis') {
         if ([String]::IsNullOrEmpty($Dir)) {
-            $Dir = Add-ResourcePath -Path 'C:\inetpub\wwwroot\' -AddPath ([String]$WsPath).Replace('/', '\')
+            $Dir = Add-1CPath -Path 'C:\inetpub\wwwroot\' -AddPath ([String]$WsPath).Replace('/', '\')
         }
         elseif (-not ($dir -like '?:\*') -and -not ($dir -like '\\*')) {
-            $Dir = Add-ResourcePath -Path 'C:\inetpub\wwwroot\' -AddPath $Dir
+            $Dir = Add-1CPath -Path 'C:\inetpub\wwwroot\' -AddPath $Dir
         }
     }
 
@@ -1814,7 +1814,7 @@ function Invoke-1CWebInst {
 
     $ArgsList = Get-1CArgs -TArgs $TArgs -ArgEnter '-'
 
-    $WebInst = Add-ResourcePath -Path (Get-1Cv8Bin -V8 $Conn.V8) -AddPath 'webinst.exe'
+    $WebInst = Add-1CPath -Path (Get-1Cv8Bin -V8 $Conn.V8) -AddPath 'webinst.exe'
 
     #$CommandStr = '"' + $WebInst + '" ' + $ArgsList
     $Result = Start-Process -FilePath $WebInst -ArgumentList $ArgsList -PassThru -WindowStyle Hidden -Wait
@@ -1889,8 +1889,8 @@ function Invoke-1CProcess {
     $DumpDir = Get-1CLogDumpDir -Log $Log
     #$DumpGuid = (New-Guid).ToString();
     $DumpGuid = (Get-Date).ToString('yyyyMMdd-HHmmss-fff');
-    $Dump = Add-ResourcePath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Dump.log')
-    $Out = Add-ResourcePath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Out.log')
+    $Dump = Add-1CPath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Dump.log')
+    $Out = Add-1CPath -Path $DumpDir -AddPath ($ProcessName + '_' + $DumpGuid + '_Out.log')
 
     if (-not $Log.ClearDump) {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Dump' -LogText $Dump
@@ -1940,7 +1940,7 @@ function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $Ar
                 # It's template: ArgValue = '[ArgKey]' then adding only ArgValue as template.
                 $ArgStr = $ArgValue
             }
-            elseif ($IsMandatoryRoundSign -or ([String]$ArgValue).Contains(' ')) {
+            elseif ($IsMandatoryRoundSign -or ($ArgValue -match '\s')) {
                 $ArgStr = $ArgEnter + $ArgKey + $ValueSep + (Add-RoundSign -Str $ArgValue -RoundSign $RoundValueSign)
             }
             else {
@@ -2016,13 +2016,13 @@ function Add-1CLog($Log, $ProcessName, $LogHead = "", $LogText, $Result = $null,
 
 # Return full filename 1cv8 ".../bin/1cv8.exe".
 function Get-1CV8Exe($V8) {
-    Add-ResourcePath -Path (Get-1Cv8Bin -V8 $V8) -AddPath '1cv8.exe'
+    Add-1CPath -Path (Get-1Cv8Bin -V8 $V8) -AddPath '1cv8.exe'
 }
 
 function Get-1CV8Bin($V8) { 
     $V8 = 1CV8VerInfo -V8 $V8
-    $V8DirVer = Add-ResourcePath -Path $V8.Dir -AddPath $V8.Ver
-    Add-ResourcePath -Path $V8DirVer -AddPath 'bin'
+    $V8DirVer = Add-1CPath -Path $V8.Dir -AddPath $V8.Ver
+    Add-1CPath -Path $V8DirVer -AddPath 'bin'
 }
 
 function Get-1CV8VerInfo($V8) {
@@ -2068,7 +2068,7 @@ function Get-1CV8VerInfo($V8) {
 
     if ($V8Ver -eq '' -or $V8Ver -eq $null) {
         # Seach last version.
-        $DirMask = Add-ResourcePath -Path $V8Dir -AddPath ('*.*.*.*')
+        $DirMask = Add-1CPath -Path $V8Dir -AddPath ('*.*.*.*')
         $LastVerDir = Get-ChildItem -Path $DirMask -Directory | Sort-Object -Property 'Name' | Select-Object -Last 1
         $V8Ver = $LastVerDir.Name
         $V8Dir = $LastVerDir.Parent.FullName
@@ -2180,7 +2180,7 @@ function Add-LogText($LogDir, $LogName, $LogMark = '', $LogHead = '', $LogText) 
     Test-AddDir -Path $LogDir
 
     $LogDate = Get-Date
-    $LogFile = Add-ResourcePath -Path $LogDir -AddPath ($LogDate.ToString('yyyyMMdd') + '_' + $LogName + '.log')
+    $LogFile = Add-1CPath -Path $LogDir -AddPath ($LogDate.ToString('yyyyMMdd') + '_' + $LogName + '.log')
 
     $FullLogText = $LogDate.ToString('yyyy.MM.dd HH:mm:ss');
     $FullLogText = Add-String -Str $FullLogText -Add $LogMark -Sep ' ';
@@ -2211,7 +2211,7 @@ function Remove-RoundSign([string]$Str, [string]$RoundSign) {
     $Str.Trim($RoundSign)   
 }
 
-function Add-ResourcePath([string]$Path, [string]$AddPath, [string]$Sep = '\') {
+function Add-1CPath([string]$Path, [string]$AddPath, [string]$Sep = '\') {
     
     if ($AddPath -eq '') {return $path}
     

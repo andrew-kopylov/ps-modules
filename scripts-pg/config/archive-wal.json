@@ -1,0 +1,7 @@
+{
+	"pgdata": "d:\\pgdata\\10.9",
+	"archive": "d:\\pgdata\\archive-wal",
+	"log": "d:\\pgdata\\archive-wal\\logs",
+	"compress": true,
+	"compressFormat": "7z"
+}

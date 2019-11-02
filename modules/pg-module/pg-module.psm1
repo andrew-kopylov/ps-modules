@@ -1,4 +1,107 @@
-﻿# PostgreSQL: version 1.0
+﻿# PostgreSQL: version 1.1
+
+function Get-PgConn {
+    param (
+        $Bin,
+        $DbName,
+        $Host,
+        $Port,
+        $UserName,
+        $NoPassword,
+        $Password,
+        $StatusInterval,
+        [switch]$Verb
+    )
+    [ordered]@{
+        dbname = $DbName;
+        host = $Host;
+        port = $Post;
+        username = $UserName;
+        nopassword = $NoPassword;
+        password = $Password;
+        statusInterval = $StatusInterval;
+        verbose = $Verb
+    }
+}
+
+function Invoke-PgBasebackup {
+    param (
+        $Conn,
+        [Parameter(Mandatory=$true)]
+        $PgData,
+        [ValidateSet('plain', 'tar')]
+        $Format,
+        $MaxRate,
+        $WriteRecoveryConf,
+        $Slot,
+        $TablespaceMapping,
+        $XLogDir,
+        [switch]$XLog,
+        [ValidateSet('fetch', 'stream')]
+        $XLogMethod,
+        [switch]$GZip,
+        $Compress,
+        [ValidateSet('fast', 'spread')]
+        $Checkpoint,
+        $Lable,
+        [switch]$Progress,
+        [switch]$Verb
+    )
+
+    $ArgsStr = ''
+
+    $ArgsList1 = [ordered]@{
+        D = $PgData;
+        F = $Format;
+        r = $MaxRate;
+        S = $Slot;
+        T = $TablespaceMapping;
+        X = $XLogMethod;
+        z = $GZip;
+
+    }
+    $ArgsStr = Get-PgArgs -ArgsStr $ArgsStr -ArgsList $ArgsList1
+
+    $ArgsList2 = [ordered]@{
+        R = $WriteRecoveryConf;
+        x = $XLog;
+        Z = $Compress;
+        c = $Checkpoint;
+        l = $Lable;
+
+    }
+    $ArgsStr = Get-PgArgs -ArgsStr $ArgsStr -ArgsList $ArgsList2
+    $ArgsStr = Add-PgArg  -ArgsStr $ArgsStr -Name 'xlogdir' -ArgEnter '--' -ValueSep '='
+
+    $ArgsList3 = [ordered]@{
+        P = $Progress;
+        v = ($Conn.verb -or $Verb);
+    }
+    $ArgsStr = Get-PgArgs -ArgsStr $ArgsStr -ArgsList $ArgsList3
+
+    $ArgsList4 = [ordered]@{
+        d = $Conn.dbname;
+        h = $Conn.host;
+        p = $Conn.port;
+        s = $Conn.statusInterval;
+        U = $Conn.username;
+        w = $Conn.nopassword;
+    }
+    $ArgsStr = Get-PgArgs -ArgsStr $ArgsStr -ArgsList $ArgsList4
+
+    $ArgsList5 = [ordered]@{
+        W = $Conn.password;
+    }
+    $ArgsStr = Get-PgArgs -ArgsStr $ArgsStr -ArgsList $ArgsList5
+
+    $FilePath = Add-PgPath -Path (Get-PgBin -Conn $Conn) -AddPath 'pg_basebackup' 
+
+    $InvokeError = @()
+
+    $Result = Invoke-Expression ($FilePath + ' ' + $ArgsStr) -ErrorVariable InvokeError
+
+    @{Result = $Result; Error = $InvokeError[0]}
+}
 
 function Invoke-PgBackup($ConnParams, $BackupDir, $Period = "", [int]$StorePeriods = 0) {
 
@@ -70,27 +173,14 @@ function Invoke-PgReindex($DbName, $TabName) {
 
 }
 
-function Get-PgBackupExtention() {
-    'backup'
+function Get-PgBin($Conn) {
+    $Conn.bin
 }
 
-function Get-PgConnParams($DbName = $null, $Usr = $null, $Srvr = $null, $Port = $null) {
-    @{DbName = $DbName; Usr = $Usr; Srvr = $Srvr; Port = $Port}
-}
 
-function Add-PgArg($Args, $Name, $Value, $DefValue) {
-    if ($Value -ne $null) {
-        $Args = $Args + ' --' + $Name + '=' + $Value
-    }
-    elseif ($DefValue -ne $null) {
-        $Args = $Args + ' --' + $Name + '=' + $DefValue
-    }
-    $Args
-} 
-
-# ---------------------------------------------------------------------
+####
 # LOGGING
-# ---------------------------------------------------------------------
+####
 
 # Return log parameters
 function Get-PgLog($Dir, $Name, $OutHost) {
@@ -98,7 +188,7 @@ function Get-PgLog($Dir, $Name, $OutHost) {
     @{Dir = $Dir; Name = $Name; OutHost = $OutHost}
 }
 
-function Out-PgLog($Log, $LogMark, $LogText, $OutHost, [switch]$InvokeThrow) {
+function Out-PgLog($Log, $Mark, $Text, $OutHost, [switch]$InvokeThrow) {
 
     $LogDir = ''
     $LogName = ''
@@ -119,11 +209,11 @@ function Out-PgLog($Log, $LogMark, $LogText, $OutHost, [switch]$InvokeThrow) {
     }
 
     $LogFile = Add-PgPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '.log')
-    $OutLogText = Get-PgLogText -LogName $LogName -LogMark $LogMark -LogText $LogText
+    $OutLogText = Get-PgLogText -LogName $LogName -LogMark $Mark -LogText $Text
 
     $OutLogText | Out-File -FilePath $LogFile -Append
 
-    if (($OutHost -eq $true) -or ((-not $OutHost -eq $false) -and $Log.OutHost -eq $true)) {
+    if ($OutHost -or (($OutHost -ne $false) -and $Log.OutHost) -or (($OutHost -eq $null) -and ($Log.OutHost -eq $null))) {
         $OutLogText | Out-Host
     }
 
@@ -150,11 +240,12 @@ function Get-PgDefaultLogDir() {
     $LogDir
 }
 
-# ---------------------------------------------------------------------
-# AUXILIARY FUNC
-# ---------------------------------------------------------------------
 
-function Get-PgPathDirectory($Path) {
+####
+# AUXILIARY FUNC
+####
+
+function Get-PgPathParent($Path) {
     $Info = [System.IO.DirectoryInfo]::new($Path)
     $Info.Parent.FullName
 }
@@ -165,6 +256,8 @@ function Get-PgPathBaseName($Path) {
 }
 
 function Get-PgPSArgs($ArgsArray) {
+
+    # Reutrn Hashtable of arguments readed from $Args (array)
 
     $HArgs = @{}
 
@@ -184,6 +277,37 @@ function Get-PgPSArgs($ArgsArray) {
     $HArgs
 }
 
+function Get-PgArgs($ArgsList, $ArgsStr = '', $ArgSep = ' ', $ArgEnter = '-', $ValueSep = ' ') {
+    foreach ($ArgKey in $ArgsList.Keys) {
+        $ArgsStr = Add-PgArg -ArgsStr $ArgsStr -Name $ArgKey -Value ($ArgsList.$ArgKey) -ArgSep $ArgSep -ArgEnter $ArgEnter -ValueSep $ValueSep
+   }
+    $ArgsStr
+}
+
+function Add-PgArg($ArgsStr, $Name, $Value, $DefaultValue,  $ArgSep = ' ', $ArgEnter = '-', $ValueSep = ' ') {
+    
+    if ($Value -eq $null) {$Value = $DefaultValue}
+    if ($Value -eq $null) {return $ArgsStr}
+
+    $CurArg = ''
+    if ($Value -is [bool] -or $Value -is [switch]) {
+        if ($Value) {
+            $CurArg = $ArgEnter + $Name
+        }
+    }
+    else {
+        $Value = [string]$Value
+        if ($Value -match '\s') {
+            $CurArg = $ArgEnter + $Name + $ValueSep + '"' + $Value + '"'
+        }
+        else {
+            $CurArg = $ArgEnter + $Name + $ValueSep + $Value
+        }
+    }
+
+    ($ArgsStr + $ArgSep + $CurArg)
+} 
+
 function Test-PgDir($Path, [switch]$CreateIfNotExist) {
     if ($Path -eq $null) {Return}
     $TestRes = Test-Path -Path $Path
@@ -197,16 +321,25 @@ function Test-PgDir($Path, [switch]$CreateIfNotExist) {
 function Add-PgPath($Path, $AddPath, $Sep = '\') {
     
     if ([String]::IsNullOrEmpty($AddPath)) {return $path}
-    
-    if ($Path.EndsWith($Sep)) {
-        $Path = $Path.Substring(0, $Path.Length - 1)
+    if ([String]::IsNullOrEmpty($Path)) {return $AddPath}
+
+    if ($AddPath -is [System.Array]) {
+        foreach ($AddPathItem in $AddPath) {
+            $Path = Add-PgPath -Path $Path -AddPath $AddPathItem -Sep $Sep
+        }
+    }
+    else {
+        if ($Path.EndsWith($Sep)) {
+            $Path = $Path.Substring(0, $Path.Length - 1)
+        }
+
+        if ($AddPath.StartsWith($Sep)) {
+            $AddPath = $AddPath.Substring(1, $Path.Length - 1)
+        }
+        $Path = $Path + $Sep + $AddPath    
     }
 
-    if ($AddPath.StartsWith($Sep)) {
-        $AddPath = $AddPath.Substring(1, $Path.Length - 1)
-    }
-
-    $Path + $Sep + $AddPath    
+    $Path
 }
 
 function Add-PgString($Str, $Add, $Sep = '') {
