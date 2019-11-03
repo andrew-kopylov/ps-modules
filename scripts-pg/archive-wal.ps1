@@ -111,12 +111,12 @@ if (Test-Path -Path $DestWalFilePath) {
 }
 
 # Copy WAL-file
-Out-PgLog -Log $Log -Mark 'begin' -Text ('wal-file ' + $SourceWalFile.FullName + ' to ' + $DestWalFilePath)
+Out-PgLog -Log $Log -Mark 'Begin' -Text ('wal-file ' + $SourceWalFile.FullName + ' to ' + $DestWalFilePath)
 Copy-Item -Path $SourceWalFile.FullName -Destination $DestWalFilePath -Force
 
 # Check wal copy.
 if (Test-Path -Path $DestWalFilePath) {
-    Out-PgLog -Log $Log -Mark 'copy' -Text ('wal-file copied successfully ' + $SourceWalFile.FullName)
+    Out-PgLog -Log $Log -Mark 'Copy' -Text ('wal-file copied successfully ' + $SourceWalFile.FullName)
 }
 else {
     $ErrText = 'WAL-file doesn''t exists after coping: ' + $SourceWalFile.FullName + ' to ' + $DestWalFilePath
