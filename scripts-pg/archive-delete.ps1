@@ -29,8 +29,9 @@ Out-PgLog -Log $Log -Mark 'Info' -Text ('hold d' + $HoldDays + ' h' + $HoldHours
 $HoldTime = New-TimeSpan -Days $HoldDays -Hours $HoldHours -Minutes $HoldMinutes
 $ThresholdDate = (Get-Date) - ($HoldTime)
 $WalThresholdName = 'walbackup-' + $ThresholdDate.ToString('yyyyMMdd-HHmmss')
+$BackupThreshodName = 'basebackup-' + $ThresholdDate.ToString('yyyyMMdd-HHmmss')
 
-Out-PgLog -Log $Log -Mark 'Info' -Text ('threshold date: ' + $ThresholdDate.ToString('dd.MM.yyyy HH:mm'))
+Out-PgLog -Log $Log -Mark 'Info' -Text ('Threshold date - ' + $ThresholdDate.ToString('dd.MM.yyyy HH:mm'))
 
 # GET LAST BACKUP POINT (NOT TO DELETE)
 $LastBackupPoint = Get-ChildItem -Path $ScriptConfigWal.archive -Filter 'walbackup-????????-??????.*.backup.*' -File -Recurse `
@@ -41,7 +42,7 @@ if ($LastBackupPoint.count -eq 0) {
     return
 }
 
-Out-PgLog -Log $Log -Mark 'Info' -Text ('Last backup point to keep: ' + $LastBackupPoint.FullName)
+Out-PgLog -Log $Log -Mark 'Info' -Text ('Last backup point to keep - ' + $LastBackupPoint.FullName)
 
 $LastBackupPointItem = $LastBackupPoint[0]
 $BackupPointPattern = '(?<prefix>walbackup-\d{8}-\d{6})\.(?<wal>[0-9a-fA-F]{24})\.(?<point>[0-9a-fA-F]{8})\.backup\.(?<ext>\w+)'
@@ -66,7 +67,7 @@ $WalPattern = '(?<prefix>walbackup-\d{8}-\d{6})\.(?<wal>[0-9a-fA-F]{24})\.(?<ext
 $WalPrefix = ''
 if ($LastWal.count -gt 0) {
     $LastWalItem = $LastWal[0]
-    Out-PgLog -Log $Log -Mark 'Info' -Text ('Last wal to keep ' + $LastWalItem.FullName)
+    Out-PgLog -Log $Log -Mark 'Info' -Text ('Last WAL to keep - ' + $LastWalItem.FullName)
     if ($LastWalItem.FullName -match $WalPattern) {
         $WalPrefix = $Matches.prefix
     }
@@ -89,7 +90,7 @@ Out-PgLog -Log $Log -Mark 'DeleteBak' -Text 'Start'
 $BakPrefix = $BackupPointPrefix -replace 'walbackup-', 'basebackup-'
 
 $BackupItems = Get-ChildItem -Path $ScriptConfigBase.archive -Filter 'basebackup-????????-??????.*' -File -Recurse `
-| Where-Object -FilterScript {($_.Name -lt $BakPrefix)} | Sort-Object -Property Name
+| Where-Object -FilterScript {($_.Name -lt $BakPrefix) -and ($_.Name -lt $BackupThreshodName)} | Sort-Object -Property Name
 
 
 if ($BackupItems.count -gt 1) {
@@ -97,7 +98,7 @@ if ($BackupItems.count -gt 1) {
     # Skip last backup - it is current last backup.
     $LastBackupToKeep = $BackupItems | Sort-Object -Property Name | Select-Object -Last 1
 
-    Out-PgLog -Log $Log -Mark 'Info' -Text ('Last backup to keep: ' + $LastBackupToKeep.FullName)
+    Out-PgLog -Log $Log -Mark 'Info' -Text ('Last backup to keep - ' + $LastBackupToKeep.FullName)
 
     foreach ($BackupItem in $BackupItems) {
         if ($BackupItem -eq $LastBackupToKeep) {
@@ -112,7 +113,7 @@ if ($BackupItems.count -gt 1) {
 
 }
 else {
-    Out-PgLog -Log $Log -Mark 'Info' -Text 'No backups to delete'
+    Out-PgLog -Log $Log -Mark 'Info' -Text 'No BASE backups to delete'
 }
 
 # DELETE WAL
@@ -131,7 +132,7 @@ if ($WalItems.count -gt 0) {
     }
 }
 else {
-    Out-PgLog -Log $Log -Mark 'Info' -Text 'No backup wal to delete'
+    Out-PgLog -Log $Log -Mark 'Info' -Text 'No WAL backups to delete'
 }
 
 Out-PgLog -Log $Log -Mark 'End' -Text 'OK'
