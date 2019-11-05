@@ -12,6 +12,10 @@ Start-1CService($Log)
 Stop-1CService($Log)
 Restart-1CService($Log)
 
+# Checks
+Invoke-1CCheckConfig
+Invoke-1CCheckModules
+
 # Configuration
 Invoke-1CUpdateDBCfg($Conn, $Dynamic, ..., $Log)
 Invoke-1CCompareCfg($Conn, $FirstConfigurationType, ..., $SecondConfigurationType, ..., $ReportFormat, $ReportFile, $Log)
