@@ -1,4 +1,4 @@
-﻿Import-Module ($PSScriptRoot + '\modules\7z-module.ps1') -Force
+﻿Import-Module 7z-module -Force
 
 $ScriptItem = $PSCommandPath | Get-Item 
 
@@ -41,7 +41,8 @@ $LogFiles = Get-ChildItem -Path $Logs -Recurse -File -Filter '*.log' `
 $UniqueBaseNames = $LogFiles | Select-Object -Property 'BaseName' -Unique
 
 # Create archive directory
-if ($UniqueBaseNames.Count -gt 0 -and -not (Test-Path -Path $LogsArch)) {
+$IsLogsToArchive = ($UniqueBaseNames.Count -gt 0) -or (-not [String]::IsNullOrEmpty($UniqueBaseNames.BaseName)) 
+if ($IsLogsToArchive -and -not (Test-Path -Path $LogsArch)) {
     New-Item -Path $LogsArch -ItemType Directory -Force
 }
 
