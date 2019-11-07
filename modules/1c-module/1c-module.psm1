@@ -2211,19 +2211,28 @@ function Remove-RoundSign([string]$Str, [string]$RoundSign) {
     $Str.Trim($RoundSign)   
 }
 
-function Add-1CPath([string]$Path, [string]$AddPath, [string]$Sep = '\') {
+function Add-1CPath([string]$Path, $AddPath, $Sep = '\') {
     
-    if ($AddPath -eq '') {return $path}
-    
-    if ($Path.EndsWith($Sep)) {
-        $Path = $Path.Substring(0, $Path.Length - 1)
+    if ([String]::IsNullOrEmpty($AddPath)) {return $Path}
+    if ([String]::IsNullOrEmpty($Path)) {return $AddPath}
+
+    if ($AddPath -is [System.Array]) {
+        foreach ($AddPathItem in $AddPath) {
+            $Path = Add-1CPath -Path $Path -AddPath $AddPathItem -Sep $Sep
+        }
+    }
+    else {
+        if ($Path.EndsWith($Sep)) {
+            $Path = $Path.Substring(0, $Path.Length - 1)
+        }
+
+        if ($AddPath.StartsWith($Sep)) {
+            $AddPath = $AddPath.Substring(1, $Path.Length - 1)
+        }
+        $Path = $Path + $Sep + $AddPath    
     }
 
-    if ($AddPath.StartsWith($Sep)) {
-        $AddPath = $AddPath.Substring(1, $Path.Length - 1)
-    }
-
-    return $Path + $Sep + $AddPath    
+    $Path
 }
 
 function Get-ValueIsEmpty($Value, $AddEmptyValues) {
