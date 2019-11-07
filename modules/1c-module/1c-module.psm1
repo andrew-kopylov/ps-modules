@@ -1429,7 +1429,7 @@ function Test-1CConfigurationChanged($Conn) {
 function Stop-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
     $ProcessName = 'TeminateSessions'
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogText ('Start "' + $TermMsg + '"')
-    $SessionsInfo = Get-1CInfoBaseSessions -Conn $Conn
+    $SessionsInfo = Get-1CIBSessions -Conn $Conn
     $Agent = $SessionsInfo.Agent
     $Sessions = $SessionsInfo.Sessions
     $TerminatedSessions = @()
@@ -1460,7 +1460,7 @@ function Stop-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log
     @{TerminatedSessions = $TerminatedSessions}
  }
 
-function Get-1CInfoBaseSessions($Conn) {
+function Get-1CIBSessions($Conn) {
 
     $ClusterInfo = Get-1CCluster -Conn $Conn -Auth
     
@@ -1490,7 +1490,7 @@ function Get-1CInfoBaseSessions($Conn) {
     }
 }
 
-function Set-1CInfoBaseSessionsDenied($Conn, [switch]$Denied, $From, $To, [string]$Msg, [string]$PermissionCode) {
+function Set-1CIBSessionsDenied($Conn, [switch]$Denied, $From, $To, [string]$Msg, [string]$PermissionCode) {
 
     if ($From -is [datetime]) {
         $From = $From.ToString('yyyy-MM-dd HH:mm:ss')
@@ -1500,7 +1500,7 @@ function Set-1CInfoBaseSessionsDenied($Conn, [switch]$Denied, $From, $To, [strin
         $To = $To.ToString('yyyy-MM-dd HH:mm:ss')
     }
     
-    $IBInfo = Get-1CInfoBaseInfo -Conn $Conn
+    $IBInfo = Get-1CIBInfo -Conn $Conn
     $InfoBase = $IBInfo.InfoBase
     $InfoBase.ConnectDenied = $Denied
     if ($Denied) {
@@ -1515,7 +1515,7 @@ function Set-1CInfoBaseSessionsDenied($Conn, [switch]$Denied, $From, $To, [strin
     $IBInfo
 }
 
-function Get-1CInfoBaseInfo($Conn) {
+function Get-1CIBInfo($Conn) {
     
     $WPInfo = Get-1CWorkingProcessConnection -Conn $Conn -Auth
 

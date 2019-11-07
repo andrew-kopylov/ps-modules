@@ -18,8 +18,7 @@
     $SlackHookUrlAlerts = ''
 )
 
-
-Import-Module ($PSScriptRoot + '\modules\1c-module.ps1') -Force
+Import-Module 1c-module -Force
 
 $PSCmdFile = Get-Item -Path $PSCommandPath
 
@@ -27,11 +26,11 @@ $PSCmdFile = Get-Item -Path $PSCommandPath
 $UseSlackInfo = (-not [String]::IsNullOrWhiteSpace($SlackHookUrl))
 $UseSlackAlets = (-not [String]::IsNullOrWhiteSpace($SlackHookUrlAlerts))
 if ($UseSlackInfo -or $UseSlackAlets) {
-    Import-Module ($PSScriptRoot + '\modules\slack-module.ps1') -Force
+    Import-Module slack-module -Force
 }
 
 if ($UseSlackInfo) {
-    $UpdateStage = 'Запуск обновления конфигурации информационной базы: ' + $BaseDescr;
+    $UpdateStage = $BaseDescr + ' Запуск обновления конфигурации информационной базы'
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
 
@@ -48,13 +47,13 @@ if ([string]::IsNullOrEmpty($AgentSrvr)) {
 # Default values
 $Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr
 
-$ScriptMsg = 'Обновление конфигурации ИБ - ' + $BaseDescr
+$ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 
 # Terminate Designers
 $IsTerminatedSessions = $false
 if ($TerminateDesigner) {
     $DesignerStartedBefore = (Get-date).AddHours(-$DisgnerOpenHours);
-    $Result = Terminate-1CInfoBaseSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
+    $Result = Stop-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
     if ($Result.TerminatedSessions.Count -gt 0) {
         $IsTerminatedSessions = $true
     }
@@ -80,7 +79,7 @@ if (Test-1CConfigurationChanged -Conn $Conn) {
 
 if (-not $IsRequiredUpdate) {
     if ($UseSlackInfo) {
-        $UpdateStage = 'Не требуется обновление конфигурации информационной базы: ' + $BaseDescr
+        $UpdateStage = $BaseDescr + ' Не требуется обновление конфигурации информационной базы'
         Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
     }
     break
@@ -91,12 +90,13 @@ $PermissionCode = 'CfgUpdate-' + (Get-Date).ToString('HHmmss')
 # Block IB for updating
 $BlockFrom = (Get-Date).AddMinutes($BlockDelayMinutes)
 $BlockTo = ($BlockFrom).AddMinutes($BlockPeriodMinutes)
-$BlockMsg = $ScriptMsg + ' с ' + $BlockFrom.ToString('HH:mm') + ' в течении ' + $BlockPeriodMinutes + ' минут.'
+$UpdatePeriodInfo = ' с ' + $BlockFrom.ToString('HH:mm') + ' в течении ' + $BlockPeriodMinutes + ' минут.'
+$BlockMsg = 'Обновление базы ' + $UpdatePeriodInfo
 Add-1CLog -Log $Log -ProcessName '1CInfoBaseSessions' -LogHead 'Block' -LogText $BlockMsg
-Set-1CInfoBaseSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode
+Set-1CIBSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode
 
 if ($UseSlackInfo) {
-    $UpdateStage = 'Установлена блокировка информационной базы: ' + $BaseDescr + '. ' + $BlockMsg
+    $UpdateStage = $BaseDescr + ' Установлена блокировка базы ' + $UpdatePeriodInfo
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
 
@@ -106,17 +106,17 @@ Add-1CLog -Log $Log -ProcessName 'UpdateTestBasesCfg' -LogHead 'Delay' -LogText 
 Start-Sleep -Seconds ($BlockDelayMinutes * 60)
 
 if ($UseSlackInfo) {
-    $UpdateStage = 'Обновление базы данных... ' + $BaseDescr
+    $UpdateStage = $BaseDescr + ' Запуск обновления конфигурации базы данных...'
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
 
 # Terminate sessions and update IB
 $Conn.UC = $PermissionCode
-Terminate-1CInfoBaseSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
+Stop-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
 Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
-Set-1CInfoBaseSessionsDenied -Conn $Conn
+Set-1CIBSessionsDenied -Conn $Conn
 
 if ($UseSlackInfo) {
-    $UpdateStage = 'Завершено обновление конфигурации информационной базы: ' + $BaseDescr;
+    $UpdateStage = $BaseDescr + ' Обновление завершено';
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
