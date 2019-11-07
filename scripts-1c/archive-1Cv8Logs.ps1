@@ -1,4 +1,4 @@
-﻿Import-Module ($PSScriptRoot + '\modules\7z-module.ps1') -force
+﻿Import-Module 7z-module -force
 
 $ScriptItem = $PSCommandPath | Get-Item 
 

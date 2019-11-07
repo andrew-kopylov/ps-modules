@@ -3,7 +3,7 @@ function Rename-FtpFile($Url, $Usr, $Pwd, $NewName) {
 
 }
 
-function Upload-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
+function Send-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
 
     $Request = Get-FtpRequest -Url $Url -Usr $Usr -Pwd $Pwd -Method ([System.Net.WebRequestMethods+Ftp]::UploadFile)
     $Request.UseBinary = $true
@@ -21,7 +21,7 @@ function Upload-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
     Get-FtpItem -Url $Url -Usr $Usr -Pwd $Pwd
 }
 
-function Download-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
+function Receive-FtpFile($Url, $Usr, $Pwd, $LocalPath) {
 
     $Request = Get-FtpRequest -Url $Url -Usr $Usr -Pwd $Pwd -Method ([System.Net.WebRequestMethods+Ftp]::DownloadFile)
     $Request.UseBinary = $true

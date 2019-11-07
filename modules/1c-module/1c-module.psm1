@@ -813,7 +813,7 @@ function Invoke-1CCRReport {
     Invoke-1CProcess -Conn $Conn -ProcessName 'CRReport' -ProcessArgs $ProcessArgs -Log $Log
 }
 
-function Parce-1CCRReportFromMXL ($TXTFile) {
+function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
 
     $RepParams = @{
         CRPath = 'Отчет по версиям хранилища';
@@ -838,7 +838,7 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
     $Version = $null;
     
     # Version, User, Date, Comment, Added (array), Changed (array)
-    $ReportText = Get-Content -Path $TXTFile
+    $ReportText = Get-Content -Path $TXTFileFromMXL
 
     $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
     $BeginCommentPattern = '^"(?<text>(?:"")*(?:[^"]|$).*)'
@@ -955,7 +955,7 @@ function Parce-1CCRReportFromMXL ($TXTFile) {
     $Report
 }
 
-function Parce-1CCRReportStd ($TXTFile) {
+function ConvertFrom-1CCRReportStd ($TXTFile) {
 
     $RepParams = @{
         CRPath = 'Отчет по версиям хранилища';
@@ -1343,7 +1343,7 @@ function Get-1CCompareTable($CompareFilePath, [string]$CompareText = '') {
     $Enters = @{Changed = '***'; InFirst = '-->'; InSecond = '<--'}
     $ReservedChars = ('[]().\^$|?*+{}').ToCharArray()
 
-    # Compare enters for using in match string.
+    # ComEpare enters for using in match string.
     $CompEntersForMatch = @()
     foreach ($CompEnter in $Enters.Values) {
         $ReservedChars | % {if ($CompEnter.Contains($_)) {$CompEnter = $CompEnter.Replace($_, [string]('\' + $_))}}   
@@ -1426,7 +1426,7 @@ function Test-1CConfigurationChanged($Conn) {
     $IsChanged
 }
 
-function Terminate-1CInfoBaseSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
+function Stop-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
     $ProcessName = 'TeminateSessions'
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogText ('Start "' + $TermMsg + '"')
     $SessionsInfo = Get-1CInfoBaseSessions -Conn $Conn
