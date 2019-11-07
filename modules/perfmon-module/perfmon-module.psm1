@@ -1,5 +1,5 @@
 ﻿
-function Create-PmCounter{
+function New-PmLogCounter{
     param (
         $Name,
         $Counters,
@@ -36,7 +36,7 @@ function Create-PmCounter{
 
 }
 
-function Export-PmGroup ($Name, $XMLFile) {
+function Export-PmLogGroup ($Name, $XMLFile) {
 
     $Parameters = @{
         name = $Name;
@@ -49,7 +49,19 @@ function Export-PmGroup ($Name, $XMLFile) {
 
 }
 
-function Find-PmErrorBinFiles($Path) {
+function Import-PmLogGroup ($Name, $XMLFile) {
+
+    $Parameters = @{
+        name = $Name;
+        xml = $XMLFile;
+    }
+
+    $Parameters = Get-PmParametersString -Parameters $Parameters -RoundValueSign '"'
+
+    Invoke-PmLogmanCommand -Verb import -Parameters $Parameters
+}
+
+function Find-PmRelogErrorBinFiles($Path) {
     $ErrorBinFiles = @()
     $LogFiles = Get-ChildItem -Path $Path -Recurse -Filter '*.blg' 
     foreach ($LogFile in $LogFiles) {
@@ -195,7 +207,7 @@ function Invoke-PmLogmanCommand {
     $Ret = Start-Process -FilePath 'logman' -ArgumentList $ArgsStr -Wait -NoNewWindow -Verbose
 }
 
-function Create-PmMonitorAlertTask {
+function New-PmMonitorAlertTask {
     param (
         [String]$SendMsgScript = 'c:\scripts\send-slackmsg'
     )
@@ -212,7 +224,7 @@ function Create-PmMonitorAlertTask {
     Register-ScheduledTask 'MonitorAlert' -InputObject $Task -TaskPath '\PmAlerts'
 }
 
-function Create-PmIamAliveAlertTask {
+function New-PmIamAliveAlertTask {
     param (
         [String]$SendMsgScript = 'c:\scripts\send-slackmsg',
         [DateTime]$At = [DateTime]::new(2000, 1, 1, 8, 0, 0)
