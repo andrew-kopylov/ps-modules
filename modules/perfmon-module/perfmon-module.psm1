@@ -1,4 +1,169 @@
 ﻿
+function Get-PmLogCountersFromCsv($Files, $BeginDate, $EndDate) {
+
+    $CounterList = @()
+    $CounterValues = @()
+
+    $FilesCounterList = @()
+
+    foreach ($File in $Files) {
+
+        $CurrentCounterList = Get-PmLogCountersListFromCsvHead -HeadLine (Get-Content -Path $File -TotalCount 1)
+
+        foreach ($CurrentCounter in $CurrentCounterList) {
+            
+            $Counter = $CounterList.Where({$_.FullName -eq $CurrentCounter.FullName})
+            if ($Counter.Count -gt 0) {
+                $Counter = $Counter[0]
+            }
+            else {
+                $Counter =@{
+                    Index = $CounterList.Count;
+                    FullName = $CurrentCounter.FullName;
+                    Name = $CurrentCounter.Name;
+                    Host = $CurrentCounter.Host;
+                    Group = $CurrentCounter.Group;
+                    Object = $CurrentCounter.Object;
+                    Key = 'K' + $CounterList.Count.ToString().PadLeft(3, '0');
+                    Min = 0;
+                    Max = 0;
+                    Avg = 0;
+                }
+                $Counter = New-Object PSCustomObject -Property $counter
+                $CounterList += $Counter
+            }
+
+            $FileCounter =@{
+                File = $File;
+                Index = $CurrentCounter.Index;
+                CounterIndex = $Counter.Index;
+            }
+
+            $FilesCounterList += New-Object PSCustomObject -Property $FileCounter
+
+        }
+
+    }
+
+    # Init values hashtable structure.
+    $Values = @{}
+    $CounterList | % {$Values.($_.Key) = 0}
+
+    foreach ($File in $Files) {
+
+        $FileCounters = $FilesCounterList.Where({$_.File -eq $File})
+
+        $Content = Get-Content -Path $File
+
+        $FirstLine = $true
+        foreach ($ValuesLine in $Content) {
+
+            if ($FirstLine) {
+                $FirstLine = $false
+                continue
+            }
+
+            $ValuesObject = New-Object PSCustomObject -Property $Values
+
+            $ValuesArray = $ValuesLine.Split(',')
+            foreach ($FileCounter in $FileCounters) {
+                $Counter = $CounterList.Where({$_.Index -eq $FileCounter.CounterIndex})[0]
+                $CounterValue = Remove-PmQuotes -Value $ValuesArray[$FileCounter.Index]
+                if ($Counter.Name -eq 'datetime') {
+                    $CounterValue = Get-PmLogDateTime -Value $CounterValue 
+                }
+                else {
+                    $CounterValue = [double]($CounterValue.Trim())
+                }           
+                $ValuesObject.($Counter.Key) = $CounterValue
+            }
+
+            $CounterValues += $ValuesObject
+        
+        } 
+
+    }
+
+    $DateTimeKey = $CounterList.Where({$_.Name -eq 'datetime'})[0].Key
+    $Keys = @()
+    $CounterList | Where-Object -Property Name -NE -Value datetime | % {$Keys += $_.Key}
+    $Measures = $CounterValues | Measure-Object -Property $Keys -Average -Maximum -Minimum
+    $Measures += ($CounterValues | Measure-Object -Property $DateTimeKey -Maximum -Minimum)
+    foreach ($Counter in $CounterList) {
+        $MeasureValues = $Measures | Where-Object -Property Property -EQ -Value $Counter.Key | Select-Object -First 1
+        $Counter.Max = $MeasureValues.Maximum
+        $Counter.Min = $MeasureValues.Minimum
+        $Counter.Avg = $MeasureValues.Average
+    }
+
+    @{Counters = $CounterList; Values = $CounterValues}
+}
+
+function Get-PmLogCountersListFromCsvHead([String]$HeadLine) {
+
+    $Heads = $HeadLine.Split(',')
+    $FirstCounter = $true
+
+    $CounterList = @()
+
+    $Index = -1
+
+    foreach ($CounterFullName in $Heads) {
+
+        $CounterFullName = Remove-PmQuotes -Value $CounterFullName
+        $Index += 1
+        
+        $Counter = @{Index = $Index; FullName = $CounterFullName; Name = ''; Host = ''; Group = ''; Object = '';}
+
+        if ($FirstCounter) {
+            $FirstCounter = $false
+            $Counter.Name = 'datetime'
+            $CounterList += New-Object PSCustomObject -Property $Counter
+            continue
+        }
+
+        $CounterParts = $CounterFullName.Split('\')
+
+        $PartsCount = $CounterParts.Count
+        $Counter.Name = $CounterParts[$PartsCount - 1]
+
+        if ($PartsCount -ge 3) {
+            $Counter.Group = $CounterParts[$PartsCount - 2]
+            $Counter.Host = $CounterParts[$PartsCount - 3]
+        }
+        elseif ($PartsCount -ge 2) {
+            $Counter.Group = $CounterParts[$PartsCount - 2]
+        }
+
+        if ($Counter.Group -match '^(.+)\((.+)\)$') {
+            $Counter.Group = $Matches.1
+            $Counter.Object = $Matches.2
+        }
+
+        $CounterList += New-Object PSCustomObject -Property $Counter        
+    }
+
+    $CounterList
+}
+
+function Remove-PmQuotes([String]$Value) {
+    if ($Value.StartsWith('"') -and $Value.EndsWith('"')) {
+        $Value = $Value.Substring(1, $Value.Length - 2)
+    }
+    $Value
+}
+
+function Get-PmLogDateTime($Value) {
+    $Pattern = '^(\d{2})\/(\d{2})\/(\d{4}) (\d{2})\:(\d{2})\:(\d{2})\.(\d{3})$'
+    if ($Value -match $Pattern) {
+        $Date = Get-Date -Year $Matches.3 -Month $Matches.2 -Day $Matches.1 -Hour $matches.4 -Minute $matches.5 -Second $matches.6 -Millisecond $matches.7
+    }
+    else {
+        $Date = $null
+    }
+    $Date
+}
+
 function New-PmLogCounter{
     param (
         $Name,
