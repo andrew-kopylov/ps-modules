@@ -1,14 +1,57 @@
 ﻿
-function Get-PmLogCountersFromCsv($Files, $BeginDate, $EndDate) {
+####
+# COUNTERS FROM CSV-FILES
+####
+
+<#
+ .Synopsis
+  Get from csv-files counters list and its values list, average, minimum and maximum value.
+
+ .Description
+  Return hashtable with kyes:
+  - Counters - list of counters in csv-files: Name, Group, Object FullName, Key (in the values table).
+  - Values - list of values by datetime - KNNN (from counter.Key)
+  
+
+ .Parameter Files
+  Array of csv-files full names.
+
+ .Parameter Begin
+  Filter by begin date 
+
+ .Parameter End
+  Filter by end date
+
+ .Parameter ReturnValues
+  Specify necessity to return values list of counters
+
+ .Parameter OnlyCountersList
+  Specify necessity to calculate min, max, avg values - read only headers csv-fiels.
+
+ .Example
+   # Show average counters value form csv-file.
+   (Get-PmCountersFromCsv -Files c:\counters.csv).Counters | Format-Table -Property Name, Object, Avg | Out-Host
+
+#>
+function Get-PmCountersFromCsv {
+    param (
+        $Files,
+        $Begin,
+        $End,
+        [switch]$ReturnValues,
+        [switch]$OnlyCountersList
+    )
 
     $CounterList = @()
     $CounterValues = @()
 
+    # Counters each file
     $FilesCounterList = @()
 
+    # Get counters list and relations between general counters and counters each file.
     foreach ($File in $Files) {
 
-        $CurrentCounterList = Get-PmLogCountersListFromCsvHead -HeadLine (Get-Content -Path $File -TotalCount 1)
+        $CurrentCounterList = Get-PmCountersListFromCsvHead -File $File
 
         foreach ($CurrentCounter in $CurrentCounterList) {
             
@@ -17,6 +60,8 @@ function Get-PmLogCountersFromCsv($Files, $BeginDate, $EndDate) {
                 $Counter = $Counter[0]
             }
             else {
+                $CounterKey = if ($CurrentCounter.Name -eq 'datetime') {'datetime'}
+                else {'K' + $CounterList.Count.ToString().PadLeft(3, '0')}
                 $Counter =@{
                     Index = $CounterList.Count;
                     FullName = $CurrentCounter.FullName;
@@ -24,7 +69,7 @@ function Get-PmLogCountersFromCsv($Files, $BeginDate, $EndDate) {
                     Host = $CurrentCounter.Host;
                     Group = $CurrentCounter.Group;
                     Object = $CurrentCounter.Object;
-                    Key = 'K' + $CounterList.Count.ToString().PadLeft(3, '0');
+                    Key = $CounterKey;
                     Min = 0;
                     Max = 0;
                     Avg = 0;
@@ -45,61 +90,76 @@ function Get-PmLogCountersFromCsv($Files, $BeginDate, $EndDate) {
 
     }
 
-    # Init values hashtable structure.
-    $Values = @{}
-    $CounterList | % {$Values.($_.Key) = 0}
+    if (-not $OnlyCountersList) {
 
-    foreach ($File in $Files) {
+        # Init values hashtable structure.
+        $Values = @{}
+        $CounterList | % {$Values.($_.Key) = 0}
 
-        $FileCounters = $FilesCounterList.Where({$_.File -eq $File})
+        # Read values from CSV files.
+        foreach ($File in $Files) {
 
-        $Content = Get-Content -Path $File
+            $FileCounters = $FilesCounterList.Where({$_.File -eq $File})
 
-        $FirstLine = $true
-        foreach ($ValuesLine in $Content) {
+            $Content = Get-Content -Path $File
 
-            if ($FirstLine) {
-                $FirstLine = $false
-                continue
-            }
+            $FirstLine = $true
+            foreach ($ValuesLine in $Content) {
 
-            $ValuesObject = New-Object PSCustomObject -Property $Values
-
-            $ValuesArray = $ValuesLine.Split(',')
-            foreach ($FileCounter in $FileCounters) {
-                $Counter = $CounterList.Where({$_.Index -eq $FileCounter.CounterIndex})[0]
-                $CounterValue = Remove-PmQuotes -Value $ValuesArray[$FileCounter.Index]
-                if ($Counter.Name -eq 'datetime') {
-                    $CounterValue = Get-PmLogDateTime -Value $CounterValue 
+                if ($FirstLine) {
+                    $FirstLine = $false
+                    continue
                 }
-                else {
-                    $CounterValue = [double]($CounterValue.Trim())
-                }           
-                $ValuesObject.($Counter.Key) = $CounterValue
+
+                $ValuesObject = New-Object PSCustomObject -Property $Values
+
+                $ValuesArray = $ValuesLine.Split(',')
+                foreach ($FileCounter in $FileCounters) {
+                    $Counter = $CounterList.Where({$_.Index -eq $FileCounter.CounterIndex})[0]
+                    $CounterValue = Remove-AuxPmQuotes -Value $ValuesArray[$FileCounter.Index]
+                    if ($Counter.Name -eq 'datetime') {
+                        $CounterValue = Get-AuxPmLogDateTime -Value $CounterValue 
+                        if (($Begin -ne $null) -and ($CounterValue -lt $Begin)) {continue}
+                        if (($End -ne $null) -and ($CounterValue -gt $End)) {break}
+                    }
+                    else {
+                        $CounterValue = [double]($CounterValue.Trim())
+                        $ValuesObject.($Counter.Key) = $CounterValue
+                    }           
+                }
+
+                $CounterValues += $ValuesObject
             }
+        }
 
-            $CounterValues += $ValuesObject
-        
-        } 
+        #  Calculate Avg, Min, Max values.
+        $Keys = @()
+        $CounterList | Where-Object -Property Name -NE -Value datetime | % {$Keys += $_.Key}
+        $Measures = $CounterValues | Measure-Object -Property $Keys -Average -Maximum -Minimum
+        $Measures += ($CounterValues | Measure-Object -Property 'datetime' -Maximum -Minimum)
+        foreach ($Counter in $CounterList) {
+            $MeasureValues = $Measures | Where-Object -Property Property -EQ -Value $Counter.Key | Select-Object -First 1
+            $Counter.Max = $MeasureValues.Maximum
+            $Counter.Min = $MeasureValues.Minimum
+            $Counter.Avg = $MeasureValues.Average
+        }
 
+    } # -not $OnlyCountersList
+
+    $Return = @{}
+    $Return.Counters = $CounterList
+    
+    if ($ReturnValues -and -not $OnlyCountersList) {
+        $Return.Values = $ReturnValues
+        $ReturnValues = $null
     }
 
-    $DateTimeKey = $CounterList.Where({$_.Name -eq 'datetime'})[0].Key
-    $Keys = @()
-    $CounterList | Where-Object -Property Name -NE -Value datetime | % {$Keys += $_.Key}
-    $Measures = $CounterValues | Measure-Object -Property $Keys -Average -Maximum -Minimum
-    $Measures += ($CounterValues | Measure-Object -Property $DateTimeKey -Maximum -Minimum)
-    foreach ($Counter in $CounterList) {
-        $MeasureValues = $Measures | Where-Object -Property Property -EQ -Value $Counter.Key | Select-Object -First 1
-        $Counter.Max = $MeasureValues.Maximum
-        $Counter.Min = $MeasureValues.Minimum
-        $Counter.Avg = $MeasureValues.Average
-    }
-
-    @{Counters = $CounterList; Values = $CounterValues}
+    $Return
 }
 
-function Get-PmLogCountersListFromCsvHead([String]$HeadLine) {
+function Get-PmCountersListFromCsvHead($File) {
+
+    $HeadLine = Get-Content -Path $File -TotalCount 1
 
     $Heads = $HeadLine.Split(',')
     $FirstCounter = $true
@@ -110,8 +170,8 @@ function Get-PmLogCountersListFromCsvHead([String]$HeadLine) {
 
     foreach ($CounterFullName in $Heads) {
 
-        $CounterFullName = Remove-PmQuotes -Value $CounterFullName
-        $Index += 1
+        $CounterFullName = Remove-AuxPmQuotes -Value $CounterFullName
+        $Index++
         
         $Counter = @{Index = $Index; FullName = $CounterFullName; Name = ''; Host = ''; Group = ''; Object = '';}
 
@@ -122,23 +182,7 @@ function Get-PmLogCountersListFromCsvHead([String]$HeadLine) {
             continue
         }
 
-        $CounterParts = $CounterFullName.Split('\')
-
-        $PartsCount = $CounterParts.Count
-        $Counter.Name = $CounterParts[$PartsCount - 1]
-
-        if ($PartsCount -ge 3) {
-            $Counter.Group = $CounterParts[$PartsCount - 2]
-            $Counter.Host = $CounterParts[$PartsCount - 3]
-        }
-        elseif ($PartsCount -ge 2) {
-            $Counter.Group = $CounterParts[$PartsCount - 2]
-        }
-
-        if ($Counter.Group -match '^(.+)\((.+)\)$') {
-            $Counter.Group = $Matches.1
-            $Counter.Object = $Matches.2
-        }
+        Get-PmCounterPropertyFromFullName -CounterFullName $CounterFullName -Counter $Counter
 
         $CounterList += New-Object PSCustomObject -Property $Counter        
     }
@@ -146,25 +190,151 @@ function Get-PmLogCountersListFromCsvHead([String]$HeadLine) {
     $CounterList
 }
 
-function Remove-PmQuotes([String]$Value) {
-    if ($Value.StartsWith('"') -and $Value.EndsWith('"')) {
-        $Value = $Value.Substring(1, $Value.Length - 2)
+function Get-PmCounterPropertyFromFullName ($CounterFullName, $Counter) {
+    
+    if ($Counter -eq $null) {
+        $Counter = @{}
     }
-    $Value
+
+    $CounterParts = $CounterFullName.Split('\')
+
+    $PartsCount = $CounterParts.Count
+    $Counter.Name = $CounterParts[$PartsCount - 1]
+
+    if ($PartsCount -ge 3) {
+        $Counter.Group = $CounterParts[$PartsCount - 2]
+        $Counter.Host = $CounterParts[$PartsCount - 3]
+    }
+    elseif ($PartsCount -ge 2) {
+        $Counter.Group = $CounterParts[$PartsCount - 2]
+    }
+
+    if ($Counter.Group -match '^(.+)\((.+)\)$') {
+        $Counter.Group = $Matches.1
+        $Counter.Object = $Matches.2
+    }
+
+    $Counter
 }
 
-function Get-PmLogDateTime($Value) {
-    $Pattern = '^(\d{2})\/(\d{2})\/(\d{4}) (\d{2})\:(\d{2})\:(\d{2})\.(\d{3})$'
-    if ($Value -match $Pattern) {
-        $Date = Get-Date -Year $Matches.3 -Month $Matches.2 -Day $Matches.1 -Hour $matches.4 -Minute $matches.5 -Second $matches.6 -Millisecond $matches.7
-    }
-    else {
-        $Date = $null
-    }
-    $Date
+function Get-PmCountersTable {
+    if ($Script:PmCountersTable -ne $null) {return $Script:PmCountersTable}
+    $Script:PmCountersTable = (Get-Content -Path (Get-AuxPmCountersFile)) | ConvertFrom-Json 
+    $Script:PmCountersTable
 }
 
-function New-PmLogCounter{
+function Update-PmCountersTable($FilePath, $CounterGroupName) {
+
+    $CurCountersTalbe = Get-PmCountersTable
+
+    $CountersTable = Get-PmLogmanCountersFromGroup -FilePath $FilePath -CounterGroupName $CounterGroupName
+
+    $IsChanged = $false
+
+    foreach ($Counter in $CountersTable) {
+        $FinedCounters = $CurCountersTalbe.Where({
+            $_.Name -eq $Counter.Name `
+            -and $_.NameKey -eq $Counter.NameKey `
+            -and $_.Gorup -eq $Counter.Group `
+            -and $_.GroupKey -eq $Counter.GroupKey
+        })
+        if ($FinedCounters.Count -eq 0) {
+            $IsChanged = $true
+            $CurCountersTalbe += $Counter
+        }
+    }
+
+    if ($IsChanged) {
+        $CurCountersTalbe | ConvertTo-Json | Out-File -FilePath (Get-AuxPmCountersFile)
+        $Script:PmCountersTable = $null
+    }
+}
+
+function Get-PmCounterNameKey([String]$Name) {
+    
+    if ($Name.Contains('%')) {$Name = $Name.Replace('%', 'Pct ')}
+    if ($Name.Contains('/')) {$Name = $Name.Replace('/', 'Per ')}
+
+    $KeyParts = @()
+
+    $NameParts = [regex]::Replace($Name, '\W+', ' ').Split(' ')
+    foreach ($NamePart in $NameParts) {
+        $KeyParts += ($NamePart.Substring(0, 1).ToUpper() + $NamePart.Substring(1))
+    }
+
+    [String]::Join('', $KeyParts)
+}
+
+function Get-AuxPmCountersFile {
+    $PSScriptRoot + '\counters.json'
+}
+
+####
+# LOGMAN
+####
+
+function Get-PmLogmanCountersFromGroup($FilePath, $CounterGroupName) {
+
+    $DeleteFile = $false
+
+    if (-not [String]::IsNullOrEmpty($CounterGroupName)) {
+        if ([String]::IsNullOrEmpty($FilePath)) {
+            $FilePath = [System.IO.Path]::GetTempFileName() + '-ExportCounters-' + $CounterGroupName + '.xml'
+            $DeleteFile = $true
+        }
+        $Result = Export-PmLogmanCounterGroup -Name $CounterGroupName -XMLFile $FilePath
+        if (-not $Result.OK) {
+            return $null
+        }
+    }
+
+    $XmlDoc = New-Object System.Xml.XmlDocument
+    $XmlDoc.Load($FilePath)
+
+    $DataCollector = $XmlDoc.DataCollectorSet.PerformanceCounterDataCollector
+    $Counters = $DataCollector.Counter
+    $ConttersDisplay = $DataCollector.CounterDisplayName
+    $CountersCount = $Counters.Count
+
+    $CountersTable = @()
+
+
+    for ($Index = 1; $Index -lt $CountersCount; $Index++) {
+
+        $CounterFullName = $Counters[$Index]
+        $CounterDispFullName = $ConttersDisplay[$Index]
+
+        $Counter = Get-PmCounterPropertyFromFullName -CounterFullName $CounterFullName
+        $CounterDisp = Get-PmCounterPropertyFromFullName -CounterFullName $CounterDispFullName
+
+        $CounterType = @{
+            Group = $Counter.Group;
+            Name = $Counter.Name;
+            GroupKey = Get-PmCounterNameKey -Name $Counter.Group;
+            NameKey = Get-PmCounterNameKey -Name $Counter.Name;
+            IsDisplayName = $false;
+        }
+        $CountersTable += New-Object PSCustomObject -Property $CounterType
+
+        $CounterDispType = @{
+            Group = $CounterDisp.Group;
+            Name = $CounterDisp.Name;
+            GroupKey = $CounterType.GroupKey;
+            NameKey = $CounterType.NameKey;
+            IsDisplayName = $true;
+        }
+        $CountersTable += New-Object PSCustomObject -Property $CounterDispType
+
+    }
+
+    if ($DeleteFile) {
+        Remove-Item -Path $FilePath
+    }
+
+    $CountersTable
+}
+
+function New-PmLogmanCounterGroup{
     param (
         $Name,
         $Counters,
@@ -201,30 +371,45 @@ function New-PmLogCounter{
 
 }
 
-function Export-PmLogGroup ($Name, $XMLFile) {
+function Export-PmLogmanCounterGroup ($Name, $XMLFile) {
 
     $Parameters = @{
         name = $Name;
         xml = $XMLFile;
     }
 
-    $Parameters = Get-PmParametersString -Parameters $Parameters -RoundValueSign '"'
-
+    $Parameters = Get-AuxPmParametersString -Parameters $Parameters -RoundValueSign '"'
     Invoke-PmLogmanCommand -Verb export -Parameters $Parameters
-
 }
 
-function Import-PmLogGroup ($Name, $XMLFile) {
+function Import-PmLogmanCounterGroup ($Name, $XMLFile) {
 
     $Parameters = @{
         name = $Name;
         xml = $XMLFile;
     }
 
-    $Parameters = Get-PmParametersString -Parameters $Parameters -RoundValueSign '"'
-
+    $Parameters = Get-AuxPmParametersString -Parameters $Parameters -RoundValueSign '"'
     Invoke-PmLogmanCommand -Verb import -Parameters $Parameters
 }
+
+function Invoke-PmLogmanCommand {
+    param (
+        [ValidateSet('create', 'query', 'start', 'stop', 'delete', 'update', 'import', 'export')]
+        $Verb,
+        [ValidateSet('counter', 'trace', 'alert', 'cfg', 'providers')]
+        $Adverb,
+        $Parameters,
+        $WorkDir,
+        [switch]$CreateErrorCmdFile
+    )
+    $ArgsStr = $Verb + (Get-AuxPmLogmanParameters -Parameters $Adverb) + (Get-AuxPmLogmanParameters -Parameters $Parameters)
+    Invoke-AuxCommand -Command 'logman' -ArgumentList $ArgsStr -WorkDir $WorkDir -CreateErrorCmdFile:$CreateErrorCmdFile
+}
+
+####
+# RELOG
+####
 
 function Find-PmRelogErrorBinFiles($Path) {
     $ErrorBinFiles = @()
@@ -322,10 +507,10 @@ function Invoke-PmRelogCommand {
     # RecordsInterval - Specifies sample intervals in "N" records.
     # Includes every nth data point in the relog file. Default is every data point
 
-    $ArgsStr = Get-PmParameterValueString -ParamVal $InputFiles -RoundValueSign '"'
+    $ArgsStr = Get-AuxPmParameterValueString -ParamVal $InputFiles -RoundValueSign '"'
 
-    $Begin = Get-PmParameterValueString -ParamVal $Begin -NullIfNull
-    $End = Get-PmParameterValueString -ParamVal $End -NullIfNull
+    $Begin = Get-AuxPmParameterValueString -ParamVal $Begin -NullIfNull
+    $End = Get-AuxPmParameterValueString -ParamVal $End -NullIfNull
 
     $TArgs = [ordered]@{
         a = $AddToExistFile;
@@ -341,38 +526,17 @@ function Invoke-PmRelogCommand {
         y = $true
     }
 
-    $ArgsStr = $ArgsStr + ' ' + (Get-PmRelogParameters -Parameters $TArgs)
+    $ArgsStr = $ArgsStr + ' ' + (Get-AuxPmRelogParameters -Parameters $TArgs)
     
-    if ([String]::IsNullOrEmpty($WorkDir)) {
-        $Process = Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose -PassThru
-    }
-    else {
-        $Process = Start-Process -FilePath 'relog' -ArgumentList $ArgsStr -Wait -WindowStyle Hidden -Verbose -PassThru -WorkingDirectory $WorkDir
-    }
-
-    if ($Process.ExitCode -ne 0 -and $CreateErrorCmdFile) {
-        $ErrorCmdFile = $OutPath + '_Error.cmd'
-        ('relog ' + $ArgsStr) | Out-File -FilePath $ErrorCmdFile -Encoding ascii
-        ('pause') | Out-File -FilePath $ErrorCmdFile -Encoding ascii -Append
-        'Error create output file: ' + $OutPath + ' see command file ' + $ErrorCmdFile | Out-Host
-    }
-
-    $Process
+    Invoke-AuxCommand -Command 'relog' -ArgumentList $ArgsStr -OutPath $OutPath -WorkDir $WorkDir -CreateErrorCmdFile:$CreateErrorCmdFile
 }
 
-function Invoke-PmLogmanCommand {
-    param (
-        [ValidateSet('create', 'query', 'start', 'stop', 'delete', 'update', 'import', 'export')]
-        $Verb,
-        [ValidateSet('counter', 'trace', 'alert', 'cfg', 'providers')]
-        $Adverb,
-        $Parameters        
-    )
-    $ArgsStr = $Verb + (Get-PmParametersString -Parameters $Adverb) + (Get-PmParametersString -Parameters $Parameters)
-    $Ret = Start-Process -FilePath 'logman' -ArgumentList $ArgsStr -Wait -NoNewWindow -Verbose
-}
 
-function New-PmMonitorAlertTask {
+####
+# TASKS
+####
+
+function New-PmTaskMonitorAlert {
     param (
         [String]$SendMsgScript = 'c:\scripts\send-slackmsg'
     )
@@ -389,7 +553,7 @@ function New-PmMonitorAlertTask {
     Register-ScheduledTask 'MonitorAlert' -InputObject $Task -TaskPath '\PmAlerts'
 }
 
-function New-PmIamAliveAlertTask {
+function New-PmTaskIamAliveAlert {
     param (
         [String]$SendMsgScript = 'c:\scripts\send-slackmsg',
         [DateTime]$At = [DateTime]::new(2000, 1, 1, 8, 0, 0)
@@ -408,17 +572,21 @@ function New-PmIamAliveAlertTask {
     Register-ScheduledTask 'IamAliveAlert' -InputObject $Task -TaskPath 'PmAlerts'
 }
 
-function Get-PmLogmanParameters($Parameters, $RoundValueSign = '') {
-    Get-PmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $true
+####
+# AUXILIARY
+####
+
+function Get-AuxPmLogmanParameters($Parameters, $RoundValueSign = '') {
+    Get-AuxPmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $true
 }
 
-function Get-PmRelogParameters($Parameters, $RoundValueSign = '') {
-    Get-PmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $false
+function Get-AuxPmRelogParameters($Parameters, $RoundValueSign = '') {
+    Get-AuxPmParametersString -Parameters $Parameters -RoundValueSign $RoundValueSign -UseSwitchOffParameters $false
 }
 
-function Get-PmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOffParameters = $true) {
+function Get-AuxPmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOffParameters = $true) {
     $ParamStr = ''
-    if (Test-PmHashTable -Object $Parameters) {
+    if (Test-AuxPmHashTable -Object $Parameters) {
         foreach ($ParamKey in $Parameters.Keys) {
             $ParamVal = $Parameters[$ParamKey]
             if ($ParamVal -eq $null ) {}
@@ -429,7 +597,7 @@ function Get-PmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOff
                 $ParamStr = $ParamStr + ' --' + $ParamKey # switch-off parameter
             }
             else {
-                $ParamStr = $ParamStr + ' -' + $ParamKey + ' ' + (Get-PmParameterValueString -ParamVal $ParamVal -RoundValueSign $RoundValueSign)
+                $ParamStr = $ParamStr + ' -' + $ParamKey + ' ' + (Get-AuxPmParameterValueString -ParamVal $ParamVal -RoundValueSign $RoundValueSign)
             }  
         }
     }
@@ -439,7 +607,7 @@ function Get-PmParametersString($Parameters, $RoundValueSign = '', $UseSwitchOff
     $ParamStr
 }
 
-function Get-PmParameterValueString($ParamVal, $RoundValueSign = '', [switch]$NullIfNull) {
+function Get-AuxPmParameterValueString($ParamVal, $RoundValueSign = '', [switch]$NullIfNull) {
     $ParamValString = ''
     if ($ParamVal -eq $null) {
         if ($NullIfNull) {
@@ -460,8 +628,101 @@ function Get-PmParameterValueString($ParamVal, $RoundValueSign = '', [switch]$Nu
     $ParamValString
 }
 
-function Test-PmHashTable ($Object) {
+function Remove-AuxPmQuotes([String]$Value) {
+    if ($Value.StartsWith('"') -and $Value.EndsWith('"')) {
+        $Value = $Value.Substring(1, $Value.Length - 2)
+    }
+    $Value
+}
+
+function Get-AuxPmLogDateTime($Value) {
+    $Pattern = '^(\d{2})\/(\d{2})\/(\d{4}) (\d{2})\:(\d{2})\:(\d{2})\.(\d{3})$'
+    if ($Value -match $Pattern) {
+        $Date = Get-Date -Year $Matches.3 -Month $Matches.2 -Day $Matches.1 -Hour $matches.4 -Minute $matches.5 -Second $matches.6 -Millisecond $matches.7
+    }
+    else {
+        $Date = $null
+    }
+    $Date
+}
+
+function Test-AuxPmHashTable ($Object) {
     if ($Object -eq $null) {return $false}
     # Is HashTable or OrderedDictionary
     (($Object -is [hashtable]) -or ($Object -is [System.Object] -and $Object.GetType().name -eq 'OrderedDictionary'))
 }
+
+function Invoke-AuxCommand($Command, $ArgumentList, $Process, $OutPath, $WorkDir, [switch]$CreateErrorCmdFile) {
+
+    if ([String]::IsNullOrEmpty($WorkDir)) {
+        $Process = Start-Process -FilePath $Command -ArgumentList $ArgumentList -Wait -WindowStyle Hidden -Verbose -PassThru
+    }
+    else {
+        $Process = Start-Process -FilePath $Command -ArgumentList $ArgumentList -Wait -WindowStyle Hidden -Verbose -PassThru -WorkingDirectory $WorkDir 
+    }
+
+    if ([String]::IsNullOrEmpty($OutPath)) {
+        if (-not [String]::IsNullOrEmpty($WorkDir)) {
+            $OutPath = $WorkDir + '\' + $Command
+        } 
+        else {
+            $OutPath = $env:TEMP + '\' + $Command
+        }
+     
+    }
+
+    $Result = @{}
+    $Result.Process = $Process
+    $Result.Cmd = $Command + ' ' + $ArgumentList
+    $Result.OK = ($Process.ExitCode -eq 0)
+    $Result.ExitCode = $Process.ExitCode
+    $Result.Msg = ''
+
+    if ($Process.ExitCode -ne 0 -and $CreateErrorCmdFile) {
+        $ErrorCmdFile = $OutPath + '_Error.cmd'
+        $Result.Cmd | Out-File -FilePath $ErrorCmdFile -Encoding ascii
+        'pause' | Out-File -FilePath $ErrorCmdFile -Encoding ascii -Append
+        $Result.Msg = 'Error. See command file ' + $ErrorCmdFile
+        $Result.Msg | Out-Host
+    }
+
+    $Result
+}
+
+function Add-AuxPmEnumCounterTypes {
+    $EnumValues = @()
+    Get-PmCountersTable | Select-Object -Property NameKey -Unique | Sort-Object -Property NameKey | % {$EnumValues += $_.NameKey}
+    Add-AuxPmEnumType -EnumName 'PmCounterTypes' -ValueNames $EnumValues
+}
+
+function Add-AuxPmEnumCounterGroups {
+    $EnumValues = @()
+    Get-PmCountersTable | Select-Object -Property GroupKey -Unique | Sort-Object -Property GroupKey | % {$EnumValues += $_.GroupKey}
+    Add-AuxPmEnumType -EnumName 'PmCounterGroups' -ValueNames $EnumValues
+}
+
+function Add-AuxPmEnumType ($EnumName, $ValueNames) {
+
+    $EnumNames = $ValueNames.Where({-not [String]::IsNullOrEmpty($_)}) 
+    if ($EnumNames.Count -eq 0) {
+        return $false
+    }
+    
+    $EnumNames = ($EnumNames | Select-Object -Unique | Sort-Object)
+
+    $DefScript = @()
+    $DefScript += 'public enum ' + $EnumName + '{'
+    $DefScript += [String]::Join(",`n", $EnumNames)
+    $DefScript += '}'
+
+    Add-Type -TypeDefinition ([String]::Join("`n", $DefScript))
+
+    $True
+}
+
+####
+# INIT MODULE
+####
+
+Add-AuxPmEnumCounterTypes
+Add-AuxPmEnumCounterGroups
