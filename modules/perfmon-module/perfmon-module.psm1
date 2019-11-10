@@ -227,7 +227,7 @@ function Update-PmCountersTable($FilePath, $CounterGroupName) {
 
     $CurCountersTalbe = Get-PmCountersTable
 
-    $CountersTable = Get-PmLogmanCountersFromGroup -FilePath $FilePath -CounterGroupName $CounterGroupName
+    $CountersTable = Get-PmLogmanCountersFromCounterGroup -FilePath $FilePath -CounterGroupName $CounterGroupName
 
     $IsChanged = $false
 
@@ -273,7 +273,7 @@ function Get-AuxPmCountersFile {
 # LOGMAN
 ####
 
-function Get-PmLogmanCountersFromGroup($FilePath, $CounterGroupName) {
+function Get-PmLogmanCountersFromCounterGroup($FilePath, $CounterGroupName) {
 
     $DeleteFile = $false
 
@@ -304,6 +304,10 @@ function Get-PmLogmanCountersFromGroup($FilePath, $CounterGroupName) {
         $CounterFullName = $Counters[$Index]
         $CounterDispFullName = $ConttersDisplay[$Index]
 
+        if ([String]::IsNullOrEmpty($CounterFullName) -or [String]::IsNullOrEmpty($CounterDispFullName)) {
+            continue
+        }
+
         $Counter = Get-PmCounterPropertyFromFullName -CounterFullName $CounterFullName
         $CounterDisp = Get-PmCounterPropertyFromFullName -CounterFullName $CounterDispFullName
 
@@ -331,7 +335,7 @@ function Get-PmLogmanCountersFromGroup($FilePath, $CounterGroupName) {
         Remove-Item -Path $FilePath
     }
 
-    $CountersTable
+    $CountersTable | Select-Object -Property Group, Name, GroupKey, NameKey, IsDisplayName -Unique
 }
 
 function New-PmLogmanCounterGroup{

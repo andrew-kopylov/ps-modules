@@ -1,3 +1,3 @@
 ﻿Import-Module perfmon-module -Force
 
-Get-PmCountersTable
+Update-PmCountersTable -CounterGroupName 'New counters' -FilePath 'd:\New counters.xml'
