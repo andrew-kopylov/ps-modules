@@ -1,5 +1,117 @@
 ﻿
 ####
+# COUNTERS
+####
+
+function Test-PmCounter {
+
+    param (
+        $Counters,
+        $Counter,
+        [PmCounterTypes]$CounterType,
+        [PmCounterGroups]$CounterGroup,
+        $Object,
+
+        [scriptblock]$Script
+    )
+
+    $NameKey = ''
+    $GroupKey = ''
+
+    if ($Counter -ne $null) {
+        $NameKey = $Counter.NameKey;
+        $GroupKey = $Counter.GroupKey;
+    } 
+    else {
+        $NameKey = $CounterType.ToString()
+        if ($CounterGroup -ne $null) {
+            $GroupKey = $CounterGroup.ToString()
+        }
+    }
+
+    $WhereScriptFilers = @('$_.NameKey -eq $NameKey')
+    if (-not [String]::IsNullOrEmpty($GroupKey)) {
+        $WhereScriptFilers += '$_.GroupKey -eq $GroupKey'
+    }
+    if (-not [String]::IsNullOrEmpty($Object)) {
+        $WhereScriptFilers += '$_.Object -eq $Object'
+    }
+    $WhereScriptFilers = [string]::Join(' -and ', $WhereScriptFilers)
+    $WhereScript = [scriptblock]::Create($WhereScriptFilers)
+    $TestedCounters = $Counters.Where($WhereScript)
+
+    $TresholdExceededCounters = $TestedCounters.Where($Script)
+    
+    $Result = @{}
+    $Result.Counters = $TestedCounters
+    $Result.TresholdExceededCounters = $TresholdExceededCounters
+    $Result.OK = ($TresholdExceededCounters.Count -eq 0)
+
+    $Msg = @()
+    if (-not -$Result.OK) {
+        
+        $MsgTmpl = 'Счетчик "&Counter" перешел пороговое значение "&Threshold" со значениями средн. &Avg, макс. &Max, мин. &Min за период времени с &BeginTime по &EndTime.'
+
+        $ScriptText = $Script.ToString().Replace('$_.', '')
+        foreach ($ExcdCounter in $TresholdExceededCounters) {
+            
+            $ExcdInfo = @{}
+            $ExcdInfo.Counter = Format-PmCounter -InputObject $ExcdCounter
+            $ExcdInfo.Threshold = $ScriptText
+            $ExcdInfo.BeginTime = $ExcdCounter.Begin.ToString('HH:mm:ss')
+            $ExcdInfo.EndTime = $ExcdCounter.End.ToString('HH:mm:ss')
+            $ExcdInfo.Avg = Format-AuxPmNumber -Number $ExcdCounter.Avg
+            $ExcdInfo.Min = Format-AuxPmNumber -Number $ExcdCounter.Min
+            $ExcdInfo.Max = Format-AuxPmNumber -Number $ExcdCounter.Max
+
+            $CounterMsg = $MsgTmpl
+            foreach ($InfoKey in $ExcdInfo.Keys) {$CounterMsg = $CounterMsg.Replace('&' + $InfoKey, $ExcdInfo.$InfoKey)}
+
+            $Msg += $CounterMsg
+
+        }
+    }
+    $Result.Msg = [String]::Join("`n", $Msg)
+
+    $Result
+}
+
+function Find-PmCounter($Name, $Group) {
+    
+    $CountersTable = Get-PmCountersTable
+    if (-not [String]::IsNullOrEmpty($Group)) {
+        $FindedCounter = $CountersTable.Where({($_.Name -eq $Name) -and ($_.Group -eq $Group)})
+    }
+    else {
+        $FindedCounter = $CountersTable.Where({($_.Name -eq $Name)})
+    }
+
+    if ($FindedCounter.Count -eq 0) {
+        return $null
+    }
+
+    $NameKey = $FindedCounter[0].NameKey
+    $GroupKey = $FindedCounter[0].GroupKey
+
+    (Get-PmCountersHashtable).($GroupKey).($NameKey)
+}
+
+function Format-PmCounter($Name, $Group, $Object, $InputObject) {
+    
+    if ($InputObject -ne $null) {
+        $Name = $InputObject.Name
+        $Group = $InputObject.Group
+        $Object = $InputObject.Object
+    }
+
+    $ObjectDescr = ''
+    if (-not [String]::IsNullOrEmpty($Object)) {
+        $ObjectDescr = '(' + $Object + ')'
+    } 
+    $Group + $ObjectDescr + '\' + $Name
+}
+
+####
 # COUNTERS FROM CSV-FILES
 ####
 
@@ -42,34 +154,53 @@ function Get-PmCountersFromCsv {
         [switch]$OnlyCountersList
     )
 
+    $FileNames = @()
+    foreach ($FileItem in $Files) {
+        if ($FileItem -is [String]) {
+            $FileNames += $FileItem
+        } 
+        else {
+            $FileNames += $FileItem.FullName
+        }
+    }
+
     $CounterList = @()
     $CounterValues = @()
+    $CounterBegin = $null
+    $CounterEnd = $null
 
     # Counters each file
     $FilesCounterList = @()
 
     # Get counters list and relations between general counters and counters each file.
-    foreach ($File in $Files) {
+    foreach ($File in $FileNames) {
 
-        $CurrentCounterList = Get-PmCountersListFromCsvHead -File $File
+        $CurCounterList = $File | Get-PmCountersListFromCsvHead
+        $CurCounterListCount = $CurCounterList.CounterCount
 
-        foreach ($CurrentCounter in $CurrentCounterList) {
-            
-            $Counter = $CounterList.Where({$_.FullName -eq $CurrentCounter.FullName})
+        for ($Index = 0; $Index -lt $CurCounterListCount; $Index++) {
+
+            $CurCounter = $CurCounterList.CounterList[$Index]
+            $Counter = $CounterList.Where({$_.FullName -eq $CurCounter.FullName})
             if ($Counter.Count -gt 0) {
                 $Counter = $Counter[0]
             }
             else {
-                $CounterKey = if ($CurrentCounter.Name -eq 'datetime') {'datetime'}
+                $CounterDescr = Find-PmCounter -Name $CurCounter.Name -Group $CurCounter.Group
+                $CounterKey = if ($CurCounter.Name -eq 'datetime') {'datetime'}
                 else {'K' + $CounterList.Count.ToString().PadLeft(3, '0')}
                 $Counter =@{
                     Index = $CounterList.Count;
-                    FullName = $CurrentCounter.FullName;
-                    Name = $CurrentCounter.Name;
-                    Host = $CurrentCounter.Host;
-                    Group = $CurrentCounter.Group;
-                    Object = $CurrentCounter.Object;
+                    FullName = $CurCounter.FullName;
+                    Name = $CurCounter.Name;
+                    Host = $CurCounter.Host;
+                    Group = $CurCounter.Group;
+                    Object = $CurCounter.Object;
+                    NameKey = $CounterDescr.NameKey;
+                    GroupKey = $CounterDescr.GroupKey;
                     Key = $CounterKey;
+                    Begin = $null;
+                    End = $null;
                     Min = 0;
                     Max = 0;
                     Avg = 0;
@@ -80,26 +211,28 @@ function Get-PmCountersFromCsv {
 
             $FileCounter =@{
                 File = $File;
-                Index = $CurrentCounter.Index;
+                Index = $CurCounter.Index;
                 CounterIndex = $Counter.Index;
             }
 
             $FilesCounterList += New-Object PSCustomObject -Property $FileCounter
-
         }
 
     }
 
+    $FilesCounterList = $FilesCounterList | Select-Object -Property File, Index, CounterIndex -Unique
+
     if (-not $OnlyCountersList) {
 
         # Init values hashtable structure.
-        $Values = @{}
+        $Values = @{datetime = $null}
         $CounterList | % {$Values.($_.Key) = 0}
 
         # Read values from CSV files.
-        foreach ($File in $Files) {
+        foreach ($File in $FileNames) {
 
             $FileCounters = $FilesCounterList.Where({$_.File -eq $File})
+            $FileCountersCount = $FileCounters.Count
 
             $Content = Get-Content -Path $File
 
@@ -111,24 +244,22 @@ function Get-PmCountersFromCsv {
                     continue
                 }
 
-                $ValuesObject = New-Object PSCustomObject -Property $Values
-
                 $ValuesArray = $ValuesLine.Split(',')
+
+                # datetime and checkperiod
+                $datetime = Get-AuxPmLogDateTime -Value (Remove-AuxPmQuotes -Value $ValuesArray[0])
+                if (($Begin -ne $null) -and ($datetime -lt $Begin)) {continue}
+                if (($End -ne $null) -and ($datetime -gt $End)) {break}
+                $Values.datetime = $datetime
+
+                # read counters
                 foreach ($FileCounter in $FileCounters) {
                     $Counter = $CounterList.Where({$_.Index -eq $FileCounter.CounterIndex})[0]
                     $CounterValue = Remove-AuxPmQuotes -Value $ValuesArray[$FileCounter.Index]
-                    if ($Counter.Name -eq 'datetime') {
-                        $CounterValue = Get-AuxPmLogDateTime -Value $CounterValue 
-                        if (($Begin -ne $null) -and ($CounterValue -lt $Begin)) {continue}
-                        if (($End -ne $null) -and ($CounterValue -gt $End)) {break}
-                    }
-                    else {
-                        $CounterValue = [double]($CounterValue.Trim())
-                        $ValuesObject.($Counter.Key) = $CounterValue
-                    }           
+                    $Values.($Counter.Key) = [double]($CounterValue.Trim())
                 }
 
-                $CounterValues += $ValuesObject
+                $CounterValues += (New-Object PSCustomObject -Property $Values)
             }
         }
 
@@ -136,18 +267,26 @@ function Get-PmCountersFromCsv {
         $Keys = @()
         $CounterList | Where-Object -Property Name -NE -Value datetime | % {$Keys += $_.Key}
         $Measures = $CounterValues | Measure-Object -Property $Keys -Average -Maximum -Minimum
-        $Measures += ($CounterValues | Measure-Object -Property 'datetime' -Maximum -Minimum)
+
+        $MeasuresDatetime = $CounterValues | Measure-Object -Property 'datetime' -Minimum -Maximum
+        $CounterBegin = $MeasuresDatetime.Minimum
+        $CounterEnd = $MeasuresDatetime.Maximum
+
         foreach ($Counter in $CounterList) {
             $MeasureValues = $Measures | Where-Object -Property Property -EQ -Value $Counter.Key | Select-Object -First 1
             $Counter.Max = $MeasureValues.Maximum
             $Counter.Min = $MeasureValues.Minimum
             $Counter.Avg = $MeasureValues.Average
+            $Counter.Begin = $CounterBegin
+            $Counter.End = $CounterEnd
         }
 
     } # -not $OnlyCountersList
 
     $Return = @{}
     $Return.Counters = $CounterList
+    $Return.Begin = $CounterBegin
+    $Return.End = $CounterEnd
     
     if ($ReturnValues -and -not $OnlyCountersList) {
         $Return.Values = $ReturnValues
@@ -157,40 +296,43 @@ function Get-PmCountersFromCsv {
     $Return
 }
 
-function Get-PmCountersListFromCsvHead($File) {
+function Get-PmCountersListFromCsvHead {
+    param(
+        [string]$File
+    )
 
-    $HeadLine = Get-Content -Path $File -TotalCount 1
-
-    $Heads = $HeadLine.Split(',')
-    $FirstCounter = $true
-
-    $CounterList = @()
-
-    $Index = -1
-
-    foreach ($CounterFullName in $Heads) {
-
-        $CounterFullName = Remove-AuxPmQuotes -Value $CounterFullName
-        $Index++
-        
-        $Counter = @{Index = $Index; FullName = $CounterFullName; Name = ''; Host = ''; Group = ''; Object = '';}
-
-        if ($FirstCounter) {
-            $FirstCounter = $false
-            $Counter.Name = 'datetime'
-            $CounterList += New-Object PSCustomObject -Property $Counter
-            continue
-        }
-
-        Get-PmCounterPropertyFromFullName -CounterFullName $CounterFullName -Counter $Counter
-
-        $CounterList += New-Object PSCustomObject -Property $Counter        
+    begin {
+        [object[]]$CounterListFromCsv = @()
     }
 
-    $CounterList
+    process {
+        
+        if (-not [String]::IsNullOrEmpty($_)) {
+            $File = $_
+        }
+
+        if (-not [String]::IsNullOrEmpty($File)) {
+
+            $HeadLine = Get-Content -Path $File -TotalCount 1
+            $Heads = $HeadLine.Split(',')
+            $HeadsCount = $Heads.Count
+
+            for ($Index = 1; $Index -lt $HeadsCount; $Index++) {
+                $CounterFullName = Remove-AuxPmQuotes -Value $Heads[$Index]
+                $Counter = @{Index = $Index; FullName = $CounterFullName; Name = ''; Host = ''; Group = ''; Object = ''}
+                Get-PmCounterPropertyFromFullName -CounterFullName $CounterFullName -Counter $Counter
+                $CounterListFromCsv += (New-Object PSCustomObject -Property $Counter)
+            }
+
+        } # in not empty $File
+    } # end process
+
+    end {
+        @{CounterList = $CounterListFromCsv; CounterCount = $CounterListFromCsv.Count}
+    }
 }
 
-function Get-PmCounterPropertyFromFullName ($CounterFullName, $Counter) {
+function Get-PmCounterPropertyFromFullName($CounterFullName, $Counter) {
     
     if ($Counter -eq $null) {
         $Counter = @{}
@@ -217,6 +359,47 @@ function Get-PmCounterPropertyFromFullName ($CounterFullName, $Counter) {
     $Counter
 }
 
+####
+# COUNTERS LIST
+####
+
+function Get-PmCountersHashtable {
+
+    if ($Script:CountersHashtable -ne $null) {
+        return $Script:CountersHashtable
+    }
+    
+    $CountersTable = Get-PmCountersTable
+
+    $Counters = @{}
+    
+    $GroupsKeys = $CountersTable | Select-Object -Property GroupKey -Unique | Sort-Object -Property GroupKey
+    foreach ($GroupItem in $GroupsKeys) {
+        
+        $GroupCounters = $CountersTable.Where({$_.GroupKey -eq $GroupItem.GroupKey})
+
+        $GroupCountersNotDisp = $GroupCounters.Where({-not $_.IsDisplay})
+        $GroupCountersIsDisp = $GroupCounters.Where({$_.IsDisplay})
+
+        $Group = @{}
+        foreach ($CounterItem in $GroupCountersNotDisp) {
+            $DispCounterItem = $GroupCountersIsDisp.Where({$_.NameKey -eq $CounterItem.NameKey})    
+            $Group.($CounterItem.NameKey) = @{
+                NameKey = $CounterItem.NameKey;
+                GroupKey = $GroupItem.GroupKey;
+                Name = $CounterItem.Name;
+                Group = $CounterItem.Group;
+                DisplayName = $DispCounterItem[0].Name;
+                DisplayGroup = $DispCounterItem[0].Group; 
+            }
+        }
+        $Counters.($GroupItem.GroupKey) = New-Object PSCustomObject -Property $Group        
+    }
+
+    $Script:CountersHashtable = $Counters
+    $Script:CountersHashtable
+}
+
 function Get-PmCountersTable {
     if ($Script:PmCountersTable -ne $null) {return $Script:PmCountersTable}
     $Script:PmCountersTable = (Get-Content -Path (Get-AuxPmCountersFile)) | ConvertFrom-Json 
@@ -231,13 +414,15 @@ function Update-PmCountersTable($FilePath, $CounterGroupName) {
 
     $IsChanged = $false
 
+    $WhereScript = {
+        $_.Name -eq $Counter.Name `
+        -and $_.NameKey -eq $Counter.NameKey `
+        -and $_.Group -eq $Counter.Group `
+        -and $_.GroupKey -eq $Counter.GroupKey
+    }
+
     foreach ($Counter in $CountersTable) {
-        $FinedCounters = $CurCountersTalbe.Where({
-            $_.Name -eq $Counter.Name `
-            -and $_.NameKey -eq $Counter.NameKey `
-            -and $_.Gorup -eq $Counter.Group `
-            -and $_.GroupKey -eq $Counter.GroupKey
-        })
+        $FinedCounters = $CurCountersTalbe.Where($WhereScript)
         if ($FinedCounters.Count -eq 0) {
             $IsChanged = $true
             $CurCountersTalbe += $Counter
@@ -263,6 +448,18 @@ function Get-PmCounterNameKey([String]$Name) {
     }
 
     [String]::Join('', $KeyParts)
+}
+
+function Add-AuxPmEnumCounterTypes {
+    $EnumValues = @()
+    Get-PmCountersTable | Select-Object -Property NameKey -Unique | Sort-Object -Property NameKey | % {$EnumValues += $_.NameKey}
+    Add-AuxPmEnumType -EnumName 'PmCounterTypes' -ValueNames $EnumValues
+}
+
+function Add-AuxPmEnumCounterGroups {
+    $EnumValues = @()
+    Get-PmCountersTable | Select-Object -Property GroupKey -Unique | Sort-Object -Property GroupKey | % {$EnumValues += $_.GroupKey}
+    Add-AuxPmEnumType -EnumName 'PmCounterGroups' -ValueNames $EnumValues
 }
 
 function Get-AuxPmCountersFile {
@@ -316,7 +513,7 @@ function Get-PmLogmanCountersFromCounterGroup($FilePath, $CounterGroupName) {
             Name = $Counter.Name;
             GroupKey = Get-PmCounterNameKey -Name $Counter.Group;
             NameKey = Get-PmCounterNameKey -Name $Counter.Name;
-            IsDisplayName = $false;
+            IsDisplay = $false;
         }
         $CountersTable += New-Object PSCustomObject -Property $CounterType
 
@@ -325,7 +522,7 @@ function Get-PmLogmanCountersFromCounterGroup($FilePath, $CounterGroupName) {
             Name = $CounterDisp.Name;
             GroupKey = $CounterType.GroupKey;
             NameKey = $CounterType.NameKey;
-            IsDisplayName = $true;
+            IsDisplay = $true;
         }
         $CountersTable += New-Object PSCustomObject -Property $CounterDispType
 
@@ -335,7 +532,7 @@ function Get-PmLogmanCountersFromCounterGroup($FilePath, $CounterGroupName) {
         Remove-Item -Path $FilePath
     }
 
-    $CountersTable | Select-Object -Property Group, Name, GroupKey, NameKey, IsDisplayName -Unique
+    $CountersTable | Select-Object -Property Group, Name, GroupKey, NameKey, IsDisplay -Unique
 }
 
 function New-PmLogmanCounterGroup{
@@ -693,18 +890,6 @@ function Invoke-AuxCommand($Command, $ArgumentList, $Process, $OutPath, $WorkDir
     $Result
 }
 
-function Add-AuxPmEnumCounterTypes {
-    $EnumValues = @()
-    Get-PmCountersTable | Select-Object -Property NameKey -Unique | Sort-Object -Property NameKey | % {$EnumValues += $_.NameKey}
-    Add-AuxPmEnumType -EnumName 'PmCounterTypes' -ValueNames $EnumValues
-}
-
-function Add-AuxPmEnumCounterGroups {
-    $EnumValues = @()
-    Get-PmCountersTable | Select-Object -Property GroupKey -Unique | Sort-Object -Property GroupKey | % {$EnumValues += $_.GroupKey}
-    Add-AuxPmEnumType -EnumName 'PmCounterGroups' -ValueNames $EnumValues
-}
-
 function Add-AuxPmEnumType ($EnumName, $ValueNames) {
 
     $EnumNames = $ValueNames.Where({-not [String]::IsNullOrEmpty($_)}) 
@@ -722,6 +907,23 @@ function Add-AuxPmEnumType ($EnumName, $ValueNames) {
     Add-Type -TypeDefinition ([String]::Join("`n", $DefScript))
 
     $True
+}
+
+function Format-AuxPmNumber($Number) {
+    
+    if ($Number -eq 0 -or $Number -eq $null) {
+        return '0'
+    }
+
+    $K = [math]::Pow(10, [math]::Round([math]::Log10($Number)) - 1) 
+    if ($K -le 10) {
+        $RoundedNumber = [math]::Round($Number / $K, 1) * $K
+    }
+    else {
+        $RoundedNumber = [math]::Round($Number, 0)
+    }
+
+    $RoundedNumber.ToString().Replace(',', '.')
 }
 
 ####
