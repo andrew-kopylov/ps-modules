@@ -50,7 +50,7 @@ function Test-PmCounter {
     $Msg = @()
     if (-not -$Result.OK) {
         
-        $MsgTmpl = 'Счетчик "&Counter" перешел пороговое значение "&Threshold" со значениями средн. &Avg, макс. &Max, мин. &Min за период времени с &BeginTime по &EndTime.'
+        $MsgTmpl = 'Счетчик "&Counter" перешел пороговое значение "&Threshold" со значениями среднее &Avg, минимум &Min, максимум &Max за период времени с &BeginTime по &EndTime.'
 
         $ScriptText = $Script.ToString().Replace('$_.', '')
         foreach ($ExcdCounter in $TresholdExceededCounters) {
