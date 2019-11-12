@@ -1,0 +1,8 @@
+{
+	"ref": "basename",
+	"usr": "updater",
+	"pwd": "updaterpwd",
+	"crpath": "tcp://srv1c/crname",
+	"crusr": "crusr",
+	"crpwd": "crpwd"
+}

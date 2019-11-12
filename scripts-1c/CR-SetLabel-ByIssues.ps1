@@ -1,4 +1,4 @@
-﻿Import-Module c:\scripts\modules\1c-module.ps1 -Force
+﻿Import-Module 1c-module -Force
 
 # Current Powershell command file
 $PSCmdFile = Get-Item -Path $PSCommandPath
@@ -6,12 +6,14 @@ $ProcessName = $PSCmdFile.BaseName
 
 # Issue files
 $IssueListFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-IssueList.txt'
-$IssueListDoneFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-IssueListDone.txt'
+$IssueListDoneFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-IssueList-Done.txt'
+$IssueListExceptFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-IssueList-Except.txt'
 
 # Config
 $ConfigDir = $PSCmdFile.DirectoryName + '\config'
-$Config = Get-Content -Path ($ConfigDir + '\conf.json') | ConvertFrom-Json 
+$Config = Get-Content -Path ($ConfigDir + '\config.json') | ConvertFrom-Json 
 $ConfigUpdater = Get-Content -Path ($ConfigDir + '\updater.json') | ConvertFrom-Json
+$ConfigPreprod = Get-Content -Path ($ConfigDir + '\preprod.json') | ConvertFrom-Json
 
 # Repository files
 $RepFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-Repository.txt'
@@ -60,12 +62,17 @@ else {
 }
 
 $Conn = Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd
+$ConnPreprod =  Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $ConfigPreprod.Ref -Usr $ConfigPreprod.Usr -Pwd $ConfigPreprod.Pwd -CRPath $ConfigPreprod.crpath -CRUsr $ConfigPreprod.crusr -CRPwd $ConfigPreprod.crpwd
 
 $Issues = @()
 Get-Content -Path $IssueListFile | % {$Issues += $_.ToUpper().Trim()}
 
 $DoneIssues = @()
 Get-Content -Path $IssueListDoneFile | % {$DoneIssues += $_.ToUpper().Trim()}
+
+$ExceptIssues = @()
+Get-Content -Path $IssueListExceptFile | % {$ExceptIssues += $_.ToUpper().Trim()}
+
 
 # Print Issues
 Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Issues' -LogText ([String]::Join(',', $Issues))
@@ -88,6 +95,7 @@ $OutFileSuffix = 'Release-' + $ReleaseNo + '-' + (Get-Date).ToString('yyMMddHHmm
 $OutFile =  $PSCmdFile.DirectoryName + '\' + $OutFileBaseName + $OutFileSuffix + '-Info.txt'
 $OutFileIssueList = $PSCmdFile.DirectoryName + '\' + $OutFileBaseName + $OutFileSuffix + '-IssueList.txt'
 $OutFileAutoObjects = $PSCmdFile.DirectoryName + '\' + $OutFileBaseName + $OutFileSuffix + '-Autoupdate.txt'
+$OutFileChangedObjects = $PSCmdFile.DirectoryName + '\' + $OutFileBaseName + $OutFileSuffix + '-Changes.txt'
 
 Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'out' -LogText $OutFile
 
@@ -105,7 +113,8 @@ Copy-Item -Path $IssueListFile -Destination $OutFileIssueList
 # Init out-file
 (Get-Date).ToString() | Out-File -FilePath $OutFile
 
-$DoSetLabel = read-host -Prompt ('Устанавливать метки (y/n)')
+# Question Set Labels
+$DoSetLabel = read-host -Prompt ('Устанавливать метки? (y/n)')
 $DoSetLabel = ($DoSetLabel -like 'y')
 if ($DoSetLabel) {
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Установка меток'
@@ -114,7 +123,8 @@ else {
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Обработка без установки меток'
 }
 
-$DoUploadCfg = read-host -Prompt ('Выгрузить конфигурацию хранилища (y/n)')
+# Question Upload configuration
+$DoUploadCfg = read-host -Prompt ('Выгрузить конфигурацию хранилища? (y/n)')
 $DoUploadCfg = ($DoUploadCfg -like 'y')
 if ($DoUploadCfg) {
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Будет выполнена выгрузка конфигурации'
@@ -123,8 +133,22 @@ else {
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Обработка без выгрузки текущей конфигурации'
 }
 
+# Question Lock objects in prod configuration
+$DoLockPreprodObjects = read-host -Prompt ('Захватить измененные объекты в продуктовом хранилище? (y/n)')
+$DoLockPreprodObjects = ($DoLockPreprodObjects -like 'y')
+if ($DoLockPreprodObjects) {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Будет выполнен захват измененных объектов в продуктовом хранилище'
+}
+else {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText 'Обработка без захвата изменных объектов в продуктовом хранилище'
+}
+
 $DataFile = $PSCmdFile.DirectoryName + '\' + $PSCmdFile.BaseName + '-Data.json'
 $ProcessData = Get-Content -Path $DataFile | ConvertFrom-Json
+if ($ProcessData -eq $null) {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText ('Ошибка чтения файла данных скрипта: ' + $DataFile)
+    return
+}
 
 if (Test-Path -Path $OutFileRepositoryJSON) {
     $DoUploadCRReport = read-host -Prompt ('Выгрузить отчет по версиям хранилища (y/n)')
@@ -137,22 +161,11 @@ else {
 if ($DoUploadCRReport) {
 
     $DoneBeforeCRVersion = $ProcessData.doneBeforeCRVersion
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'GetCRReport' -LogText ('Получение отчета хранилища начиная с версии: ' + $DoneBeforeCRVersion)
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'GetCRReport.Info' -LogText ('Получение отчета хранилища начиная с версии: ' + $DoneBeforeCRVersion)
     Invoke-1CCRReportTXT -Conn $Conn -ReportFile $RepFile -NBegin $DoneBeforeCRVersion -Log $Log
 
-    $RepData = Parce-1CCRReportFromMXL -TXTFile $RepFile
-
-    if ($RepData -eq $null) {
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'ParceCRReport.Error' -LogText ('Data is null')
-        break
-    }
-
-    $RepVer = $RepData.Versions
-    if ($RepVer.Count -eq 0) {
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'ParceCRReport' -LogText ('No any versions')
-        break
-    }
-
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'GetCRReport.Info' -LogText ('Парсинг отчета хранилища...')
+    $RepData = ConvertFrom-1CCRReport -TXTFileFromMXL $RepFile
     $RepData | ConvertTo-Json -Depth 4 | Out-File -FilePath $OutFileRepositoryJSON
 }
 else {
@@ -160,8 +173,23 @@ else {
     $RepData = Get-Content -Path $OutFileRepositoryJSON | ConvertFrom-Json
 }
 
+if ($RepData -eq $null) {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'CRReport.Error' -LogText 'Repository report data is null'
+    break
+}
+
+$RepVer = $RepData.Versions
+if ($RepVer.Count -eq 0) {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'CRReport.Error' -LogText 'No any versions in repository report'
+    break
+}
+
+Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText 'Формирование таблицы соответствия задач, объектов и версий хранилища...'
+
 $IssueObjects = @() # []@{[Integer][$Version, String]Object; [String]Issue; [Int]IssueNumb; [Bool]Done; [Bool]ToRelease}
 $IssuePattern = '(?<issueno>' + ([String]$IssuePrefix).ToUpper().Trim() + '-(?<issuenumb>\d+))'
+
+$LastCommitToRelease = 0
 
 foreach ($Ver in $RepVer) {
 
@@ -182,15 +210,20 @@ foreach ($Ver in $RepVer) {
     
     foreach ($Issue in $VerIssues) {
 
-        $IssueIsDone = ($Issue.No -in $DoneIssues)
+        $IssueIsDone = ($Issue.No -in $DoneIssues) -or  ($Issue.No -in $ExceptIssues)
         $IssueToRelease = ($Issue.No -in $Issues)
+
+        $VersionNumber = [int]$Ver.Version
+        if ($IssueIsDone -and ($VersionNumber -gt $LastCommitToRelease)) {
+            $LastCommitToRelease = $VersionNumber
+        }
 
         $Objects = @()
         if ($Ver.Added -ne $null) {$Objects += $Ver.Added}
         if ($Ver.Changed -ne $null) {$Objects += $Ver.Changed}
         foreach ($Object in $Objects) {
             $IssueObject = @{
-                Version = [Int]$Ver.Version
+                Version = $VersionNumber;
                 Issue = $Issue.No;
                 IssueNumb = $Issue.Numb;
                 Object = $Object;
@@ -204,20 +237,19 @@ foreach ($Ver in $RepVer) {
     }
 }
 
-Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText 'Заполнение описания релизя'
-
-Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'info' -LogText ('Issue objects table count: ' + $IssueObjects.Count)
+Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText 'Заполнение описания релиза'
+Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText ('Issue objects table count: ' + $IssueObjects.Count)
 
 # Changed objects (not to release and not done)
-$ObjectsNotDoneNotReleased = $IssueObjects | Where-Object -FilterScript {-not $_.Done -and -not $_.ToRelease} `
+$ObjectsNotDoneNotReleased = $IssueObjects | Where-Object -FilterScript {-not $_.Done -and -not $_.ToRelease -and ($_.Version -le $LastCommitToRelease)} `
 | Sort-Object -Property Object | Select-Object -Property Object -Unique | Get-1CPropertyValues -Property Object
 
 # Auto updated objects without conflicts.
-$ObjectsToAutoUpdate = $IssueObjects | Where-Object -FilterScript {($_.Issue -in $Issues) -and -not ($_.Object -in $ObjectsNotDoneNotReleased)} `
+$ObjectsToAutoUpdate = $IssueObjects | Where-Object -FilterScript {($_.Issue -in $Issues) -and -not ($_.Object -in $ObjectsNotDoneNotReleased) -and ($_.Version -le $LastCommitToRelease)} `
 | Sort-Object -Property Object | Select-Object -Property Object -Unique | Get-1CPropertyValues -Property Object
 
 # Objects with conflicts
-$ObjectsConflicted = $IssueObjects | Where-Object -FilterScript {($_.Issue -in $Issues) -and ($_.Object -in $ObjectsNotDoneNotReleased)} `
+$ObjectsConflicted = $IssueObjects | Where-Object -FilterScript {($_.Issue -in $Issues) -and ($_.Object -in $ObjectsNotDoneNotReleased) -and ($_.Version -le $LastCommitToRelease)} `
 | Sort-Object -Property Object | Select-Object -Property Object -Unique | Get-1CPropertyValues -Property Object
 
 $ObjectsToChange = $IssueObjects | Where-Object -FilterScript {$_.Issue -in $Issues} `
@@ -228,7 +260,10 @@ $ObjectsToChange = $IssueObjects | Where-Object -FilterScript {$_.Issue -in $Iss
 'Changed objects: ' + $ObjectsToChange.Count | Out-File -FilePath $OutFile -Append
 'Autoupdated objects: ' + $ObjectsToAutoUpdate.Count | Out-File -FilePath $OutFile -Append
 'Conflicted objects: ' + $ObjectsConflicted.Count | Out-File -FilePath $OutFile -Append
+'Last commit to release: ' + $LastCommitToRelease | Out-File -FilePath $OutFile -Append
 
+
+$ObjectsToChange | Out-File -FilePath $OutFileChangedObjects
 $ObjectsToAutoUpdate | Out-File -FilePath $OutFileAutoObjects
 
 $IssueObjectsToRelease = $IssueObjects | Where-Object -FilterScript {$_.ToRelease}
@@ -339,10 +374,17 @@ else {
     'NO objects with conflicts' | Out-File -FilePath $OutFile -Append
 }
 
+if ($DoLockPreprodObjects) {
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText 'Захват объектов в продуктовом хранилище...'
+    Invoke-1CCRLock -Conn $ConnPreprod -Objects $ObjectsToChange -includeChildObjectsAll -Log $Log
+}
+
 if ($DoUploadCfg) {
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText 'Выгрузка конфигурации...'
-    Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-    Invoke-1CDumpCfg -Conn $Conn -CfgFile $OutFileDumpCfg -Log $Log
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Info' -LogText ('Выгрузка конфигурации хранилища версии ' + $LastCommitToRelease + '...')
+    $OutFileDumpCfg = $OutFileDumpCfg.Replace('-DumpCfg', '-' + $LastCommitToRelease.ToString() + '-DumpCfg')
+    Invoke-1CCRDumpCfg -Conn $Conn -CfgFile $OutFileDumpCfg -v $LastCommitToRelease -Log $Log
 }
 
 Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'End'
+
+Start-Sleep -Seconds 10
