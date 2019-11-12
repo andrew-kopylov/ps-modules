@@ -600,6 +600,28 @@ function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$in
     Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
 }
 
+function Invoke-1CCRDumpCfg($Conn, $CfgFile, $v, $Log) {
+
+    #/ConfigurationRepositoryDumpCfg [-Extension <имя расширения>] <имя cf файла> [-v <номер версии хранилища>] 
+
+    $ProcessName = 'CRDumpCfg';
+    $ProcessArgs = '/ConfigurationRepositoryDumpCfg "[CfgFile]"'
+    $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile)
+
+    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText ('version ' + $v + ' - ' + $CfgFile)
+    
+    $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgEnter '-' -ArgsStr $ProcessArgs
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    if ($Result.OK -ne 1) {
+        $Msg = "Ошибка выгузки конфигурации хранилища в файл.";
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "End.Error" -LogText $Msg -Result $Result
+    }
+
+    $Result
+}
+
 function Invoke-1CCRCommit($Conn, $Objects, [switch]$includeChildObjectsAll, $comment, $keepLocked, $force, $Log) {
  
     # /ConfigurationRepositoryCommit [-objects <имя файла со списком объектов>] [-comment "<Текст комментария>"] [-keepLocked] [-force] [-Extension <имя расширения>]
