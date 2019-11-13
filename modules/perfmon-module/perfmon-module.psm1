@@ -37,8 +37,16 @@ function Test-PmCounter {
         $WhereScriptFilers += '$_.Object -eq $Object'
     }
     $WhereScriptFilers = [string]::Join(' -and ', $WhereScriptFilers)
-    $WhereScript = [scriptblock]::Create($WhereScriptFilers)
+    $WhereScript = [scriptblock]::Create($WhereScriptFilers)    
+
+    $Result = @{}
+    
     $TestedCounters = $Counters.Where($WhereScript)
+    if ($TestedCounters.Count -eq 0) {
+        $Result.OK = $false
+        $Result.Msg = 'No counter: ' + (Format-PmCounter -Name $NameKey -Group $GroupKey -Object $Object)
+
+    }
 
     $TresholdExceededCounters = $TestedCounters.Where($Script)
     
@@ -50,7 +58,7 @@ function Test-PmCounter {
     $Msg = @()
     if (-not -$Result.OK) {
         
-        $MsgTmpl = 'Счетчик "&Counter" перешел пороговое значение "&Threshold" со значениями среднее &Avg, минимум &Min, максимум &Max за период времени с &BeginTime по &EndTime.'
+        $MsgTmpl = 'Counter "&Counter" - "&Threshold": avg &Avg, min &Min, max &Max at &BeginTime-&EndTime.'
 
         $ScriptText = $Script.ToString().Replace('$_.', '')
         foreach ($ExcdCounter in $TresholdExceededCounters) {
