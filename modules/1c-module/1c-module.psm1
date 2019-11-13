@@ -848,6 +848,7 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
         Comment = 'Комментарий';
         Added = 'Добавлены';
         Changed = 'Изменены';
+        Deleted = 'Удалены';
     }
 
     $Report = @{
@@ -861,6 +862,7 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
     
     # Version, User, Date, Comment, Added (array), Changed (array)
     $ReportText = Get-Content -Path $TXTFileFromMXL
+    $ReportText += '' # For correct processed end
 
     $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
     $BeginCommentPattern = '^"(?<text>(?:"")*(?:[^"]|$).*)'
@@ -869,6 +871,7 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
     $Comment = $null
     $Added = $null
     $Changed = $null
+    $Deleted = $null
 
     foreach ($RepStr in $ReportText) {
 
@@ -900,6 +903,15 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             } 
             else {
                 $Changed += $RepStr.Trim()
+            }
+        }
+        elseif ($Deleted -is [System.Array]) {
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Deleted = $Deleted
+                $Deleted = $null
+            } 
+            else {
+                $Deleted += $RepStr.Trim()
             }
         }
         elseif ($RepStr -match $ParamPattern) {
@@ -935,6 +947,9 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             elseif ($ParamName -eq $RepParams.Changed) {
                 [String[]]$Changed = @($ParamValue)
             }
+            elseif ($ParamName -eq $RepParams.Deleted) {
+                [String[]]$Deleted = @($ParamValue)
+            }
             elseif ($ParamName -eq $RepParams.Comment) {
                 $Comment = [string]$ParamValue
                 if ([String]::IsNullOrWhiteSpace($Comment)) {
@@ -964,7 +979,7 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             elseif ($ParamName -eq $RepParams.RepTime) {
                 $Report.RepTime = $ParamValue.Trim();
             }
-        } # if contains ":"
+        }
         else {
             continue
         }
@@ -1000,14 +1015,17 @@ function ConvertFrom-1CCRReportStd ($TXTFile) {
     
     # Version, User, Date, Comment, Added (array), Changed (array)
     $ReportText = Get-Content -Path $TXTFile
+    $ReportText += '' # For correct processed end
 
     $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
     $AddedPattern = '^\sДобавлены\s\d+'
     $ChangedPattern = '^\sИзменены\s\d+'
+    $DeletedPattern = '^\sУдалены\s\d+'
     
     $Comment = $null
     $Added = $null
     $Changed = $null
+    $Deleted = $null
 
     foreach ($RepStr in $ReportText) {
 
@@ -1040,6 +1058,15 @@ function ConvertFrom-1CCRReportStd ($TXTFile) {
             } 
             else {
                 $Changed += $RepStr.Trim()
+            }
+        }
+        elseif ($Deleted -is [System.Array]) {
+            if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                $Version.Deleted = $Deleted
+                $Deleted = $null
+            } 
+            else {
+                $Deleted += $RepStr.Trim()
             }
         }
         elseif ($RepStr -match $ParamPattern) {
@@ -1084,7 +1111,10 @@ function ConvertFrom-1CCRReportStd ($TXTFile) {
         }
         elseif ($RepStr -match $ChangedPattern) {
             [String[]]$Changed = @()
-        } # if contains ":"
+        }
+        elseif ($RepStr -match $DeletedPattern) {
+            [String[]]$Deleted = @()
+        }
         else {
             continue
         }
@@ -1126,8 +1156,9 @@ function Get-1CCRVersionTmpl {
         Date = $null;
         Time = $null;
         Comment = '';
-        Added = $null;
-        Changed = $null;
+        #Added = $null;
+        #Changed = $null;
+        #Deleted = $null;
     }
 }
 
@@ -1794,6 +1825,14 @@ function Invoke-1CWebInst {
         $OAuth
     )
 
+    # webinst [-publish] | -delete <веб-сервер>
+    # -wsdir <виртуальный каталог>
+    # -dir <физический каталог>
+    # -connstr <строка соединения>
+    # -confpath <путь к файлу httpd.conf>
+    # -descriptor <путь к файлу-шаблону default.vrd>
+    # [-osauth]
+
     if ($Conn -is [String]) {
         $ConnStr = $Conn
     }
@@ -1831,7 +1870,7 @@ function Invoke-1CWebInst {
     $Targs.dir = Add-RoundSign -RoundSign '"' -Str $Dir
     $TArgs.connstr = Add-RoundSign -RoundSign '"' -Str $ConnStr
     $TArgs.confpath = Add-RoundSign -RoundSign '"' -Str $ConfPath
-    $TArgs.description = Add-RoundSign -RoundSign '"' -Str $Descriptor
+    $TArgs.descriptor = Add-RoundSign -RoundSign '"' -Str $Descriptor 
     $TArgs.OAuth = $OAuth
 
     $ArgsList = Get-1CArgs -TArgs $TArgs -ArgEnter '-'
