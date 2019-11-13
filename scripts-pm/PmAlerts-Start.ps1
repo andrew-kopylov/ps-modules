@@ -1,4 +1,4 @@
-﻿$StartScriptPath = $PSScriptRoot + '\TestPmCounters-Exec.ps1'
+﻿$StartScriptPath = $PSScriptRoot + '\PmAlerts-Exec.ps1'
 $ArgumentList = '-f "' + $StartScriptPath + '"'
 $Process = Start-Process -FilePath 'powershell' -ArgumentList $ArgumentList
 $Process.ExitCode

@@ -847,7 +847,7 @@ function Remove-AuxPmQuotes([String]$Value) {
 function Get-AuxPmLogDateTime($Value) {
     $Pattern = '^(\d{2})\/(\d{2})\/(\d{4}) (\d{2})\:(\d{2})\:(\d{2})\.(\d{3})$'
     if ($Value -match $Pattern) {
-        $Date = Get-Date -Year $Matches.3 -Month $Matches.2 -Day $Matches.1 -Hour $matches.4 -Minute $matches.5 -Second $matches.6 -Millisecond $matches.7
+        $Date = Get-Date -Year $Matches.3 -Month $Matches.1 -Day $Matches.2 -Hour $matches.4 -Minute $matches.5 -Second $matches.6 -Millisecond $matches.7
     }
     else {
         $Date = $null
