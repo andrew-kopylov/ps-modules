@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.1'
+    '1.4.2'
 }
 
 function Update-1CModule ($Log) {
@@ -835,7 +835,20 @@ function Invoke-1CCRReport {
     Invoke-1CProcess -Conn $Conn -ProcessName 'CRReport' -ProcessArgs $ProcessArgs -Log $Log
 }
 
-function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
+function ConvertFrom-1CCRReport {
+    param (
+        $TXTFile,
+        [ValidateSet('UploadedAsTXT', 'ConvertedFromMXL')]
+        $FileType
+    )
+
+    if (-not [String]::IsNullOrEmpty($FileType)) {
+        $IsConvertedFromMXL = ($FileType -eq 'ConvertedFromMXL')
+    }
+    else {
+        $IsConvertedFromMXL = $null
+    }
+
 
     $RepParams = @{
         CRPath = 'Отчет по версиям хранилища';
@@ -861,13 +874,22 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
     $Version = $null;
     
     # Version, User, Date, Comment, Added (array), Changed (array)
-    $ReportText = Get-Content -Path $TXTFileFromMXL
+    $ReportText = Get-Content -Path $TXTFile
     $ReportText += '' # For correct processed end
 
     $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
+
+    #++ For ver Report converted TXT from MXL
     $BeginCommentPattern = '^"(?<text>(?:"")*(?:[^"]|$).*)'
     $EndCommentPattern = '(?<text>.*(?:[^"]|^)(?:"")*)"(?:$|\s)'
-    
+    #--
+
+    #++ For ver Report loaded as TXT
+    $AddedPattern = '^\sДобавлены\s\d+'
+    $ChangedPattern = '^\sИзменены\s\d+'
+    $DeletedPattern = '^\sУдалены\s\d+'
+    #--
+
     $Comment = $null
     $Added = $null
     $Changed = $null
@@ -875,19 +897,55 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
 
     foreach ($RepStr in $ReportText) {
 
+        # Autodefine by comment file type.
+        if (($IsConvertedFromMXL -eq $null) -and ($Comment -ne $null)) {
+            if ($RepStr -match $ParamPattern) {
+                $ParamName = $Matches.param
+                $ParamValue = $Matches.value
+                if ($ParamName = $RepParams.Comment) {
+                    $IsConvertedFromMXL = $true
+                    $Comment = $null
+
+                }
+            }
+            if ($IsConvertedFromMXL -ne $true) {$IsConvertedFromMXL = $false}
+        }
+
+        # Parce text
         if ($Comment -ne $null) {
-            if ($RepStr -match $EndCommentPattern) {
-                $Comment = $Comment + '
-                ' + $Matches.text.Trim()
-                $Version.Comment = $Comment.Replace('""', '"')
-                $Comment = $null
-            }
+
+            # Comment
+            
+            if ($IsConvertedFromMXL) {
+                if ($RepStr -match $EndCommentPattern) {
+                    $Comment = $Comment + '
+                    ' + $Matches.text.Trim()
+                    $Version.Comment = $Comment.Replace('""', '"')
+                    $Comment = $null # End comment
+                }
+                else {
+                    $Comment = $Comment + '
+                    ' + $RepStr.Trim()
+                }
+            } #-- Conveted from MXL
             else {
-                $Comment = $Comment + '
-                ' + $RepStr.Trim()
-            }
+                if ([String]::IsNullOrWhiteSpace($RepStr)) {
+                    $Version.Comment = $Comment.Trim()
+                    $Comment = $null # End comment
+                }
+                elseif ($Comment -eq '') {
+                    $Comment = $RepStr.Trim() # Begin comment
+                }
+                else {
+                    $Comment = $Comment + '
+                    ' + $RepStr.Trim()
+                }
+            } #-- Loaded as TXT
         }
         elseif ($Added -is [System.Array]) {
+
+            # Added objects 
+            
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
                 $Version.Added = $Added
                 $Added = $null
@@ -895,8 +953,12 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             else {
                 $Added += $RepStr.Trim()
             }
+
         }
         elseif ($Changed -is [System.Array]) {
+
+            # Changed objects
+
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
                 $Version.Changed = $Changed
                 $Changed = $null
@@ -906,6 +968,9 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             }
         }
         elseif ($Deleted -is [System.Array]) {
+
+            # Deleted objects
+
             if ([String]::IsNullOrWhiteSpace($RepStr)) {
                 $Version.Deleted = $Deleted
                 $Deleted = $null
@@ -915,6 +980,8 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             }
         }
         elseif ($RepStr -match $ParamPattern) {
+
+            # Parameter - "Name: Value"
 
             $ParamName = $Matches.param
             $ParamValue = $Matches.value
@@ -940,15 +1007,10 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
             }
             elseif ($ParamName -eq $RepParams.CreateTime) {
                 $Version.Time = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.Added) {
-                [String[]]$Added = @($ParamValue)
-            }
-            elseif ($ParamName -eq $RepParams.Changed) {
-                [String[]]$Changed = @($ParamValue)
-            }
-            elseif ($ParamName -eq $RepParams.Deleted) {
-                [String[]]$Deleted = @($ParamValue)
+                if (-not $IsConvertedFromMXL) {
+                    # Init comment reading after CreateTime string
+                    $Comment = '' 
+                }
             }
             elseif ($ParamName -eq $RepParams.Comment) {
                 $Comment = [string]$ParamValue
@@ -970,130 +1032,14 @@ function ConvertFrom-1CCRReport ($TXTFileFromMXL) {
                     }
                 }
             }
-            elseif ($ParamName -eq $RepParams.CRPath) {
-                $Report.CRPath = $ParamValue.Trim();
+            elseif ($ParamName -eq $RepParams.Added) {
+                [String[]]$Added = @($ParamValue)
             }
-            elseif ($ParamName -eq $RepParams.RepDate) {
-                $Report.RepDate = $ParamValue.Trim();
+            elseif ($ParamName -eq $RepParams.Changed) {
+                [String[]]$Changed = @($ParamValue)
             }
-            elseif ($ParamName -eq $RepParams.RepTime) {
-                $Report.RepTime = $ParamValue.Trim();
-            }
-        }
-        else {
-            continue
-        }
-    }
-
-    if ($Version -ne $null) {
-        $Report.Versions += $Version
-    }
-    
-    $Report
-}
-
-function ConvertFrom-1CCRReportStd ($TXTFile) {
-
-    $RepParams = @{
-        CRPath = 'Отчет по версиям хранилища';
-        RepDate = 'Дата отчета';
-        RepTime = 'Время отчета';
-        Version = 'Версия';
-        User = 'Пользователь';
-        CreateDate = 'Дата создания';
-        CreateTime = 'Время создания';
-    }
-
-    $Report = @{
-        CRPath = '';
-        RepDate = '';
-        RepTime = '';
-        Versions = @();
-    }
-
-    $Version = $null;
-    
-    # Version, User, Date, Comment, Added (array), Changed (array)
-    $ReportText = Get-Content -Path $TXTFile
-    $ReportText += '' # For correct processed end
-
-    $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
-    $AddedPattern = '^\sДобавлены\s\d+'
-    $ChangedPattern = '^\sИзменены\s\d+'
-    $DeletedPattern = '^\sУдалены\s\d+'
-    
-    $Comment = $null
-    $Added = $null
-    $Changed = $null
-    $Deleted = $null
-
-    foreach ($RepStr in $ReportText) {
-
-        if ($Comment -is [String]) {
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Comment = $Comment.Trim()
-                $Comment = $null
-            }
-            elseif ($Comment -eq '') {
-                $Comment = $RepStr.Trim()
-            }
-            else {
-                $Comment = $Comment + '
-                ' + $RepStr.Trim()
-            }
-        }       
-        elseif ($Added -is [System.Array]) {
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Added = $Added
-                $Added = $null
-            } 
-            else {
-                $Added += $RepStr.Trim()
-            }
-        }
-        elseif ($Changed -is [System.Array]) {
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Changed = $Changed
-                $Changed = $null
-            } 
-            else {
-                $Changed += $RepStr.Trim()
-            }
-        }
-        elseif ($Deleted -is [System.Array]) {
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Deleted = $Deleted
-                $Deleted = $null
-            } 
-            else {
-                $Deleted += $RepStr.Trim()
-            }
-        }
-        elseif ($RepStr -match $ParamPattern) {
-
-            $ParamName = $Matches.param
-            $ParamValue = $Matches.value
-
-            if ($ParamName -eq '') {
-                continue;
-            }
-            elseif ($ParamName -eq $RepParams.Version) {
-                if ($Version -ne $null) {
-                    $Report.Versions += $Version
-                }
-                $Version = Get-1CCRVersionTmpl
-                $Version.Version = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.User) {
-                $Version.User = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.CreateDate) {
-                $Version.Date = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.CreateTime) {
-                $Version.Time = $ParamValue.Trim();
-                # Init comment reading after CreateTime string
-                $Comment = '' 
+            elseif ($ParamName -eq $RepParams.Deleted) {
+                [String[]]$Deleted = @($ParamValue)
             }
             elseif ($ParamName -eq $RepParams.CRPath) {
                 $Report.CRPath = $ParamValue.Trim();
@@ -1104,19 +1050,17 @@ function ConvertFrom-1CCRReportStd ($TXTFile) {
             elseif ($ParamName -eq $RepParams.RepTime) {
                 $Report.RepTime = $ParamValue.Trim();
             }
-
         }
-        elseif ($RepStr -match $AddedPattern) {
-            [String[]]$Added = @()
-        }
-        elseif ($RepStr -match $ChangedPattern) {
-            [String[]]$Changed = @()
-        }
-        elseif ($RepStr -match $DeletedPattern) {
-            [String[]]$Deleted = @()
-        }
-        else {
-            continue
+        elseif (-not $IsConvertedFromMXL) {
+            if ($RepStr -match $AddedPattern) {
+                [String[]]$Added = @()
+            }
+            elseif ($RepStr -match $ChangedPattern) {
+                [String[]]$Changed = @()
+            }
+            elseif ($RepStr -match $DeletedPattern) {
+                [String[]]$Deleted = @()
+            }
         }
     }
 
