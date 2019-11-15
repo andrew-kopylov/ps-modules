@@ -45,7 +45,7 @@ function Test-PmCounter {
     if ($TestedCounters.Count -eq 0) {
         $Result.OK = $false
         $Result.Msg = 'No counter: ' + (Format-PmCounter -Name $NameKey -Group $GroupKey -Object $Object)
-
+        return $Result
     }
 
     $TresholdExceededCounters = $TestedCounters.Where($Script)
@@ -58,7 +58,7 @@ function Test-PmCounter {
     $Msg = @()
     if (-not -$Result.OK) {
         
-        $MsgTmpl = 'Counter "&Counter" - "&Threshold": avg &Avg, min &Min, max &Max at &BeginTime-&EndTime.'
+        $MsgTmpl = 'Counter "&Counter" - "&Threshold" - avg &Avg, min &Min, max &Max at &BeginTime-&EndTime.'
 
         $ScriptText = $Script.ToString().Replace('$_.', '')
         foreach ($ExcdCounter in $TresholdExceededCounters) {
@@ -274,6 +274,8 @@ function Get-PmCountersFromCsv {
         #  Calculate Avg, Min, Max values.
         $Keys = @()
         $CounterList | Where-Object -Property Name -NE -Value datetime | % {$Keys += $_.Key}
+        if ($Keys.count -eq 0) {continue}
+
         $Measures = $CounterValues | Measure-Object -Property $Keys -Average -Maximum -Minimum
 
         $MeasuresDatetime = $CounterValues | Measure-Object -Property 'datetime' -Minimum -Maximum
