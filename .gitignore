@@ -1,1 +1,2 @@
-*/.check-config.txt
+# Ignore check files
+*.check-config.txt
