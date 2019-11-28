@@ -169,7 +169,7 @@ if ($DoUploadCRReport) {
     Invoke-1CCRReportTXT -Conn $Conn -ReportFile $RepFile -NBegin $DoneBeforeCRVersion -Log $Log | Out-Null
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'GetCRReport.Info' -LogText ('Парсинг отчета хранилища...')
-    $RepData = ConvertFrom-1CCRReport -TXTFileFromMXL $RepFile
+    $RepData = ConvertFrom-1CCRReport -TXTFile $RepFile
     $RepData | ConvertTo-Json -Depth 4 | Out-File -FilePath $OutFileRepositoryJSON
 }
 else {
