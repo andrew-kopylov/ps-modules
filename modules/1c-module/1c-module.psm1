@@ -996,7 +996,16 @@ function ConvertFrom-1CCRReport {
                 }
 
                 $Version = Get-1CCRVersionTmpl
-                $Version.Version = $ParamValue.Trim().Replace(' ', '');
+
+                $ParamValue = $ParamValue.Trim()
+
+                $NumbSep = [string][char]160
+                if ($ParamValue.Contains($NumbSep)) {$ParamValue = $ParamValue.Replace($NumbSep,'')}
+
+                $NumbSep = [string][char]32
+                if ($ParamValue.Contains($NumbSep)) {$ParamValue = $ParamValue.Replace($NumbSep,'')}
+
+                $Version.Version = $ParamValue
 
             }
             elseif ($ParamName -eq $RepParams.User) {
