@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.2'
+    '1.4.3'
 }
 
 function Update-1CModule ($Log) {
@@ -1085,6 +1085,43 @@ function Invoke-1CCROptimizeData ($Conn, $Log) {
     Invoke-1CProcess -Conn $Conn -ProcessName 'CROptimizeData' -ProcessArgs $ProcessArgs -Log $Log
 }
 
+function Backup-1CCR ($Path, $BackupPath, $Log) {
+
+    $ProcessName = 'CRBackup'
+
+    $Result = @{OK = 1; Msg = ''}
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Begin' -LogText ('"' + $Path + '" to "' + $BackupPath + '"')
+
+    if (-not (Test-Path -Path $BackupPath)) {
+        New-Item -Path $BackupPath -ItemType Directory -Force
+    }
+
+    $DataFile = Add-1CPath -Path $Path -AddPath 1cv8ddb.1cd
+    $DataDir = Add-1CPath -Path $Path -AddPath data
+
+    $DataFileDest = Add-1CPath -Path $BackupPath -AddPath 1cv8ddb.1cd
+    $DataDirDest = Add-1CPath -Path $BackupPath -AddPath data
+
+    if (Test-Path -Path $DataFile) {
+        Copy-Item -Path $DataFile -Destination $DataFileDest -Force
+        if (-not (Test-Path -Path $DataFileDest)) {
+            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText ('Copy error: ' + $DataFileDest) -Result $Result -OK 0
+        }
+    }
+
+    if (Test-Path -Path $DataDir) {
+        Copy-Item -Path $DataDir -Destination $DataDirDest -Force -Recurse
+        if (-not (Test-Path -Path $DataDirDest)) {
+            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText ('Copy error: ' + $DataDirDest) -Result $Result -OK 0
+        }
+    }
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'End' -LogText ('OK ' + $Result.OK)
+
+    $Result
+}
+
 # Invoke CR commands.
 
 function Get-1CCRObjectsFromFile($FilePath) {
@@ -1424,7 +1461,6 @@ function Get-1CCRLockingObject([string]$Metadata) {
 # 1C-Administration
 ####
 
-
 function Test-1CConfigurationChanged($Conn) {
     $ComConn = Get-1CComConnection -Conn $Conn
     $IsChanged = Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'ConfigurationChanged'
@@ -1432,7 +1468,7 @@ function Test-1CConfigurationChanged($Conn) {
     $IsChanged
 }
 
-function Stop-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
+function Remove-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
     $ProcessName = 'TeminateSessions'
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogText ('Start "' + $TermMsg + '"')
     $SessionsInfo = Get-1CIBSessions -Conn $Conn
