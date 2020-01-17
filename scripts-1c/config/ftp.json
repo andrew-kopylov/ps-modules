@@ -1,0 +1,6 @@
+{
+"srv": "ftpserver",
+"usr": "ftpuser",
+"pwd": "",
+"rootPath": "arhive-files/logs"
+}
