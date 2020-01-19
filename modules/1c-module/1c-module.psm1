@@ -564,7 +564,7 @@ function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
 
 ## Public repository functions.
 
-function Invoke-1CCRCreate{
+function Invoke-1CCRCreate {
     param (
         $Conn,
         [switch]$AllowConfigurationChanges, 
@@ -587,6 +587,39 @@ function Invoke-1CCRCreate{
     }
 
     Invoke-1CProcess -Conn $Conn -ProcessCommand 'ConfigurationRepositoryCreate' -ProcessName 'CRCreate' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+function Invoke-1CCRBindCfg {
+    param(
+        $Conn,
+        [switch]$forceBindAlreadyBindedUser,
+        [switch]$forceReplaceCfg
+    )
+
+    #/ConfigurationRepositoryBindCfg [-Extension <имя расширения>] [-forceBindAlreadyBindedUser][-forceReplaceCfg] 
+    #— подключение неподключенной конфигурации к хранилищу конфигурации.
+
+    $ProcessArgs = @{
+        forceBindAlreadyBindedUser = $forceBindAlreadyBindedUser;
+        forceReplaceCfg = $forceReplaceCfg;
+    }
+
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'ConfigurationRepositoryBindCfg' -ProcessName 'CRBindCfg' -ProcessArgs $ProcessArgs -Log $Log
+}
+
+function Invoke-1CCRUnbindCfg {
+    param(
+        $Conn,
+        [switch]$force
+    )
+
+    #/ConfigurationRepositoryUnbindCfg [-Extension <имя расширения>] [-force]
+
+    $ProcessArgs = @{
+        force = $force;
+    }
+
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'ConfigurationRepositoryUnbindCfg' -ProcessName 'CRUnbindCfg' -ProcessArgs $ProcessArgs -Log $Log
 }
 
 function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$includeChildObjectsAll, $Log) {
