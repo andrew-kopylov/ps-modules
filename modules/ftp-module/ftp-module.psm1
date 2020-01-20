@@ -1,9 +1,10 @@
 ﻿
+# ftp-module: 1.0
+
 function Get-FtpConn($Srv, $Usr, $Pwd, $RootPath, $IsSecure, $BufferSize = 64KB) {
     @{
         Srv = $Srv;
-        Usr = $Usr;
-        Pwd = $Pwd;
+        Credentials = New-Object System.Net.NetworkCredential($Usr, $Pwd);
         RootPath = $RootPath;
         IsSecure = $IsSecure;
         BufferSize = $BufferSize
@@ -11,7 +12,12 @@ function Get-FtpConn($Srv, $Usr, $Pwd, $RootPath, $IsSecure, $BufferSize = 64KB)
 }
 
 function Rename-FtpFile($Conn, $Path, $NewName) {
-
+    $Request = Get-FtpRequest -Conn $Conn -Path $Path -Method ([System.Net.WebRequestMethods+Ftp]::Rename)
+    $Request.RenameTo = $NewName
+	$Response = $Request.GetResponse()
+	$Status = $Response.StatusDescription
+	$Response.Close()
+    return $Status
 }
 
 function Send-FtpFile($Conn, $Path, $LocalPath) {
@@ -85,11 +91,13 @@ function Receive-FtpFile($Conn, $Path, $LocalPath) {
     Get-Item -Path $LocalPath
 }
 
-function Remove-FtpItem($Conn, $Path) {
+function Remove-FtpItem($Conn, $Path, [switch]$CheckFile) {
     
-    $Item = Get-FtpItem -Conn $Conn -Path $Path
-    if ($Item -eq $null) {
-        return $false
+    if ($CheckFile) {
+        $Item = Get-FtpItem -Conn $Conn -Path $Path
+        if ($Item -eq $null) {
+            return $false
+        }
     }
 
     $Request = Get-FtpRequest -Conn $Conn -Path $Path
@@ -102,8 +110,13 @@ function Remove-FtpItem($Conn, $Path) {
     }
 
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
-    $Response.Close()
-    $Response.Dispose()
+    if ($Response -ne $null) {
+        $Response.Close()
+        $Response.Dispose()
+    }
+    else {
+        return $false
+    }
 
     $true
 }
@@ -133,7 +146,7 @@ function Get-FtpItem($Conn, $Path) {
         $SubPath = $SplitUrl.Parent
     }
 
-    $Item = Get-FtpChildItems -Conn $Conn -Path $SubPath | Where-Object -FilterScript {$_.Name -Like $Child}
+    $Item = Get-FtpChildItem -Conn $Conn -Path $SubPath | Where-Object -FilterScript {$_.Name -Like $Child}
   
     if ($Item -ne $null -and $Item.Name -like $Child) {
         return $Item
@@ -144,12 +157,12 @@ function Get-FtpItem($Conn, $Path) {
 
 }
 
-function Get-FtpChildItems($Conn, $Path) {
+function Get-FtpChildItem($Conn, $Path, [switch]$Recurse) {
 
     $Request = Get-FtpRequest -Conn $Conn -Path $Path -Method ([System.Net.WebRequestMethods+Ftp]::ListDirectoryDetails)
 
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
-    $Stream = New-Object System.IO.StreamReader($Response.GetResponseStream())
+    $Stream = New-Object System.IO.StreamReader($Response.GetResponseStream(), [System.Text.Encoding]::Default)
 
     # drw-rw-rw- 1 ftp ftp            0 Jun 10 10:16 directoryname
     # -rw-rw-rw- 1 ftp ftp     32866304 Sep 28 23:00 filename
@@ -171,7 +184,8 @@ function Get-FtpChildItems($Conn, $Path) {
     $Line = $Stream.ReadLine()
     while ($Line -ne $null) {
         if ($Line -match $Pattern) {
-            $Item = New-Object psobject -Property @{
+            $FileInfo = [System.IO.FileInfo]$Matches.name;
+            $Item = New-Object PSCustomObject -Property @{
                 Dir = ($Matches.dir -eq 'd');
                 Right = $Matches.right;
                 Link = [int]$Matches.link;
@@ -182,8 +196,11 @@ function Get-FtpChildItems($Conn, $Path) {
                 Day = [int]$Matches.day;
                 Time = $Matches.time;
                 Name = $Matches.name;
+                BaseName = $FileInfo.BaseName;
+                Extension = $FileInfo.Extension;
                 Parent = $Path;
-                FilePath = (Add-FtpUrlPath -Url $Path -SubUrl $Matches.name)
+                FilePath = (Add-FtpUrlPath -Url $Path -SubUrl $Matches.name);
+                FullName = (Join-FtpUrlPaths -Paths $Conn.RootPath, $Path, $Matches.name)
             }
             $FtpItems += $Item
         }
@@ -192,6 +209,17 @@ function Get-FtpChildItems($Conn, $Path) {
 
     $Response.Close()
     $Response.Dispose()
+
+    if ($Recurse) {
+        $SubDirs = $FtpItems.Where({$_.Dir})
+        foreach ($DirItem in $SubDirs) {
+            $SubPath = Add-PgPath -Path $Path -AddPath $DirItem.Name
+            $SubItemList = Get-FtpChildItem -Conn $Conn -Path $SubPath -Recurse:$true
+            foreach ($SubItem in $SubItemList) {
+                $FtpItems += $SubItem
+            }
+        }
+    }
 
     $FtpItems
 }
@@ -209,7 +237,7 @@ function Get-FtpRequest($Conn, $Path, $Method) {
     $Url = Join-FtpUrlPaths -Paths @($Proto, $Conn.Srv, $Conn.RootPath, $Path)
 
     $FtpRequest = [System.Net.FtpWebRequest]::Create($Url)
-    $FtpRequest.Credentials = New-Object System.Net.NetworkCredential($Conn.Usr, $Conn.Pwd)
+    $FtpRequest.Credentials = $Conn.Credentials
     if ($Method -ne $null) {
         $FtpRequest.Method = $Method
     }
