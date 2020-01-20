@@ -1,5 +1,5 @@
 ﻿
-# PostgreSQL: version 2.1
+# pg-module: version 2.2
 
 function Get-PgConn {
     param (
@@ -562,69 +562,6 @@ function Invoke-PgExec($Conn, $ExecName, $ArgStr) {
 function Get-PgBin($Conn) {
     $Conn.bin
 }
-
-####
-# LOGGING
-####
-
-# Return log parameters
-function Get-PgLog($Dir, $Name, $OutHost) {
-    # Log directory, Log file base name, Out host - bool, log to Out-Host
-    @{Dir = $Dir; Name = $Name; OutHost = $OutHost}
-}
-
-function Out-PgLog($Log, $Mark, $Text, $OutHost, [switch]$InvokeThrow) {
-
-    $LogDir = ''
-    $LogName = ''
-
-    if ($Log -ne $null) {
-        $LogDir = $Log.Dir
-        $LogName = $LogName.Name
-    }
-
-    if ([String]::IsNullOrEmpty($LogDir)) {
-        $LogDir = Get-PgDefaultLogDir
-    }
-    Test-PgDir -Path $LogDir -CreateIfNotExist | Out-Null
-
-    $LogName = $Log.Name;
-    if ([String]::IsNullOrEmpty($LogName)) {
-        $LogName = "pg-module";
-    }
-
-    $LogFile = Add-PgPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '.log')
-    $OutLogText = Get-PgLogText -LogName $LogName -LogMark $Mark -LogText $Text
-
-    $OutLogText | Out-File -FilePath $LogFile -Append
-
-    if ($OutHost -or (($OutHost -ne $false) -and $Log.OutHost) -or (($OutHost -eq $null) -and ($Log.OutHost -eq $null))) {
-        $OutLogText | Out-Host
-    }
-
-    if ($InvokeThrow) {
-        throw $OutLogText
-    }
-
-}
-
-function Get-PgLogText($LogName, $LogMark, $LogText) {
-    if ([String]::IsNullOrEmpty($LogText)) {return ''}
-    $FullLogText = (Get-Date).ToString('yyyy.MM.dd HH:mm:ss');
-    $FullLogText = Add-PgString -Str $FullLogText -Add $LogName -Sep ' ';
-    $FullLogText = Add-PgString -Str $FullLogText -Add $LogMark -Sep '.';
-    $FullLogText = Add-PgString -Str $FullLogText -Add $LogText -Sep ': ';
-    $FullLogText
-}
-
-function Get-PgDefaultLogDir() {
-    $LogDir = ''
-    if (-not [String]::IsNullOrEmpty($env:TEMP)) {$LogDir = $env:TEMP}
-    else {$LogDir = $env:TMP}
-    $LogDir = Add-PgPath -Path $LogDir -AddPath 'pg-module'
-    $LogDir
-}
-
 
 ####
 # AUXILIARY FUNC
