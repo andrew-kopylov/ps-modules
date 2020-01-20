@@ -1,62 +1,5 @@
 ﻿
-# PostgreSQL: version 1.1
-
-function Invoke-PgBackup($Conn, $BackupDir, $Period = "", [int]$StorePeriods = 0) {
-
-    # Period: d - day (default), w - week, m - month, y - year
-    
-    $DbName = $ConnParams.DbName;
-    $BackupDate = (Get-Date).ToString('yyyyMMdd_HHmmss')
-
-    $BackupName = $DbName + '_' + $BackupDate;
-
-    if ($StorePeriods -gt 0) {
-        if ($Period -eq '') {$Period = 'd'} # day by default
-        $FindedBackups = Find-PgBackup -DbName $DbName -BackupDir $BackupDir -Period $Period -StorePeriods $StorePeriods
-        if ($FindedBackups.Count -gt 0) {
-            Return ''
-        };
-        $BackupName = $BackupName + '_' + $Period + $StorePeriods.ToString()
-    }
-
-    $BackupFile = $BackupDir + '\' + $BackupName + '.' + (Get-PgBackupExtention)
-
-    Invoke-PgDumpSimple -Conn $Conn -File $BackupFile -Compress 9
-}
-
-function Invoke-PgSql($ConnParams, $Sql) {
-
-    $PgArgs = "";
-
-    $PgArgs = Add-PgArg -Args $PgArgs -Name 'dbname' -Value $ConnParams.DbName -DefValue 'postgres'
-    $PgArgs = Add-PgArg -Args $PgArgs -Name 'username' -Value $ConnParams.Usr
-    $PgArgs = Add-PgArg -Args $PgArgs -Name 'host' -Value $ConnParams.Srvr
-    $PgArgs = Add-PgArg -Args $PgArgs -Name 'port' -Value $ConnParams.Port
-
-    # Addition parameters.
-    $PgArgs = $PgArgs + ' --no-password'
-    
-    $PgArgs = $PgArgs.Trim()
-    $Return = Start-Process -FilePath "psql" -ArgumentList $PgArgs -NoNewWindow -Wait
-
-    $Return
-}
-
-function Get-PgDatabases() {
-
-
-    
-
-
-
-
-}
-
-function Invoke-PgReindex($DbName, $TabName) {
-
-}
-
-# Low level functions
+# PostgreSQL: version 2.1
 
 function Get-PgConn {
     param (
@@ -72,20 +15,117 @@ function Get-PgConn {
         [switch]$Verbose
     )
     [ordered]@{
-        dbname = $DbName;
-        host = $Host;
-        port = $Post;
-        username = $UserName;
-        nopassword = $NoPassword;
-        password = $Password;
-        statusInterval = $StatusInterval;
-        verbose = $Verbose
+        bin = $Bin;
+        pgdata = $PgData;
+        DbName = $DbName;
+        Host = $Host;
+        Port = $Port;
+        UserName = $UserName;
+        NoPassword = $NoPassword;
+        Password = $Password;
+        StatusInterval = $StatusInterval;
+        Verbose = $Verbose
     }
 }
+
+function Get-PgDatabases($Conn) {
+
+    $FieldSep = ';'
+
+    $Command = 'select oid, datname from pg_database'
+    $Return = Invoke-PgSql -Conn $Conn -Command $Command -NoAlign -TuplesOnly -FieldSep $FieldSep
+    if (-not $Return.OK) {
+       return @()
+    }
+
+    $Databases = @()
+    foreach ($OutLine in $Return.Out) {
+        $LineValues = ([string]$OutLine).Split($FieldSep)
+        $Values = @{
+            oid = $LineValues[0];
+            name = $LineValues[1];
+        }
+        $Databases += New-Object -TypeName PSCustomObject -Property $Values
+    }
+
+    $Databases
+}
+
+function Invoke-PgCheckpoint($Conn) {
+    Invoke-PgSql -Conn $Conn -Command 'CHECKPOINT'
+}
+
+function Invoke-PgReindex() {
+    param (
+        $Conn,
+        $DbName,
+        [ValidateSet('Index', 'Table', 'Schema', 'Database')]
+        [string]$Object,
+        $Name
+    )
+
+    if ([string]::IsNullOrEmpty($Name)) {
+        $Name = $DbName
+    }
+
+    if ([string]::IsNullOrEmpty($Name)) {
+        $Name = $Conn.DbName
+    }
+
+    if ([string]::IsNullOrEmpty($Object)) {
+        $Object = 'Database'
+    }
+
+    $Verbose = if ($Conn.Verbose) {'VERBOSE'} else {''}
+    $Object = $Object.ToUpper()
+
+    $SqlCmd = 'REINDEX ' + $Verbose + ' ' + $Object + ' ' + (Add-PgArgValueQuotes -Value $Name)
+
+    Invoke-PgSql -Conn $Conn -DbName $DbName -Command $SqlCmd
+}
+
+function Invoke-PgTerminateBackend {
+    param (
+        $Conn,
+        $DbName
+    )
+    $SqlCmd = "select pg_terminate_backend(st.pid) from pg_stat_activity as st where datname = '" + $DbName + "'"
+    Invoke-PgSql -Conn $Conn -Command $SqlCmd
+}
+
+function Invoke-PgDumpSimple {
+    param (
+        $Conn,
+        $DbName,
+        $File,
+        $Compress = 5
+    )
+
+    # Never prompt for password
+    $Conn.nopassword = $true
+
+    Invoke-PgDump -Conn $Conn -DbName $DbName -File $File -Format custom -JobsNum $JobsNum -Compress $Compress -Encoding 'UTF8'
+}
+
+function Invoke-PgRestoreSimple {
+    param (
+        $Conn,
+        $DbName,
+        $File
+    )
+
+    # Never prompt for password
+    $Conn.nopassword = $true
+
+    Invoke-PgRestore -Conn $Conn -DbName $DbName -BackupFile $File -Format custom -IfExists
+}
+
+# Low level functions
 
 function Invoke-PgBasebackup {
     param (
         $Conn,
+        $BackupPath,
         [Parameter(Mandatory=$true)]
         [ValidateSet('plain', 'tar')]
         $Format,
@@ -109,7 +149,7 @@ function Invoke-PgBasebackup {
     $ArgStr = ''
 
     $ArgList1 = [ordered]@{
-        D = $Conn.PgData;
+        D = $BackupPath;
         F = $Format;
         r = $MaxRate;
         S = $Slot;
@@ -155,26 +195,14 @@ function Invoke-PgBasebackup {
     Invoke-PgExec -Conn $Conn -ExecName 'pg_basebackup' -ArgStr $ArgStr
 }
 
-function Invoke-PgDumpSimple {
-    param (
-        $Conn,
-        $File,
-        $Compress
-    )
-
-    # Never prompt for password
-    $Conn.nopassword = $true
-
-    Invoke-PgDump -Conn $Conn -File $File -Format custom -JobsNum $JobsNum -Compress $Compress -Encoding 'UTF8'
-}
-
 function Invoke-PgDump {
     param(
         $Conn,
+        $DbName,
         [Parameter(HelpMessage="Output file or directory name.")]
         $File,
         [Parameter(HelpMessage="Output file format.")]
-        [ValidateSet('custom', 'direcotry', 'tar', 'plain_text')]
+        [ValidateSet('custom', 'direcotry', 'tar', 'plain')]
         $Format,
         [Parameter(HelpMessage="Use this many parallel jobs to dump.")]
         $JobsNum,
@@ -224,6 +252,10 @@ function Invoke-PgDump {
         $Role
     )
 
+    if ([string]::IsNullOrEmpty($DbName) -and (-not [string]::IsNullOrEmpty($Conn.dbname))) {
+        $DbName = $Conn.dbname
+    }
+
     $ArgList = [ordered]@{
         file = $File;
         format = $Format;
@@ -267,7 +299,6 @@ function Invoke-PgDump {
         snapshot = $Snapshot;
         strict_names = $StrictNames;
         use_set_session_authorization = $UseSetSessionAuth;
-        dbname = $Conn.DbName;
         host = $Conn.Host;
         port = $Conn.Port;
         username = $Conn.UserName;
@@ -276,14 +307,189 @@ function Invoke-PgDump {
         role = $Role
     }
 
-    $AgrsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
-    Invoke-PgExec -Conn $Conn -ExecName 'pg_dump' -ArgStr $AgrsStr    
+    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+
+    if (-not [string]::IsNullOrEmpty($DbName)) {
+        $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $DbName)
+    }
+
+    Invoke-PgExec -Conn $Conn -ExecName 'pg_dump' -ArgStr $ArgsStr    
 }
 
 function Invoke-PgRestore {
+    param (
+        $Conn,
+        $DbName,
+        [ValidateSet('custom', 'direcotry', 'tar', 'plain')]
+        $Format,
+        $BackupFile,
+        $OutFile,
+        [switch]$List,
+        [switch]$DataOnly,
+        [switch]$DropObjects,
+        [switch]$CreateDb,
+        [switch]$ExitOnErr,
+        $Index,
+        $JobsCount,
+        $UseList,
+        $Schemas,
+        $ExcludeSchemas,
+        [switch]$NoOwner,
+        $Functions,
+        $SchemaOnly,
+        $Superuser,
+        $Tables,
+        $Triggers,
+        [switch]$NoPrivileges,
+        [switch]$SingleTran,
+        [switch]$DisableTriggers,
+        [switch]$EnableRowSecurity,
+        [switch]$IfExists,
+        [switch]$NoDataFailedTables,
+        [switch]$NoPublications,
+        [switch]$NoSecurityLables,
+        [switch]$NoSubscriptions,
+        [switch]$NoTablespaces,
+        $Sections,
+        [switch]$StrictNames,
+        [switch]$UseSessionAuth,
+        $Role
+    )
 
-    # TODO: create function
+    if ([string]::IsNullOrEmpty($DbName) -and (-not [string]::IsNullOrEmpty($Conn.dbname))) {
+        $DbName = $Conn.dbname
+    }
 
+    $ArgList = [ordered]@{
+        dbname = $DbName;
+        file = $OutFile;
+        format = $Format;
+        list = $List;
+        verbose = $Conn.verbose;
+        data_only = $DataOnly;
+        clean = $DropObjects;
+        create = $CreateDb;
+        exit_on_error = $ExitOnErr;
+        index = $Index;
+        jobs = $JobsCount;
+        use_list = $UseList;
+        schema = $Schemas;
+        exclude_schema = $ExcludeSchemas;
+        no_owner = $NoOwner;
+        function = $Functions;
+        schame_only = $SchemaOnly;
+        superuser = $Superuser;
+        table = $Tables;
+        trigger = $Triggers;
+        no_privileges = $NoPrivileges;
+        single_transaction = $SingleTran;
+        disable_triggers = $DisableTriggers;
+        enable_row_security = $EnableRowSecurity;
+        if_exists = $IfExists;
+        no_data_for_failed_tables = $NoDataFailedTables;
+        no_publications = $NoPublications;
+        no_security_lables = $NoSecurityLables;
+        no_subscriptions = $NoSubscriptions;
+        no_tablespaces = $NoTablespaces;
+        section = $Sections;
+        strict_names = $StrictNames;
+        use_set_session_authorization = $UseSessionAuth;
+        host = $Conn.Host;
+        port = $Conn.Post;
+        username = $Conn.UserName;
+        no_password = $Conn.NoPassword;
+        password = $Conn.Password;
+        role = $Role;
+    }
+
+    $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $BackupFile)
+
+    Invoke-PgExec -Conn $Conn -ExecName 'pg_restore' -ArgStr $ArgsStr
+}
+
+function Invoke-PgSql {
+    param (
+        $Conn,
+        $DbName,
+        $UserName,
+        $Command,
+        $CmdFile,
+        [switch]$DbList,
+        $Variables,
+        [ValidateSet('all', 'errors', 'queries', 'hidden')]
+        $Echo,
+        $LogFile,
+        $OutFile,
+        $Quiet,
+        [switch]$SingleStepMode,
+        [switch]$SingleLineMode,
+        [switch]$NoAlign,
+        $FieldSep,
+        [switch]$Html,
+        $PSet,
+        $RecordSep,
+        [switch]$TuplesOnly,
+        $TableAttr,
+        $FieldSepZero,
+        $RecordSepZero
+    )
+
+    if (-not [string]::IsNullOrEmpty($Command)) {
+        if ($Command.Contains("`n")) {
+            $Command = $Command.Replace("`n", ' ')
+        }
+        if ($Command.Contains("`r")) {
+            $Command = $Command.Replace("`r", ' ')
+        }
+        if ($Command.Contains('"')) {
+            $Command = $Command.Replace('"', '\""')
+        }
+    }
+
+    $ArgList = [ordered]@{
+        command = $Command;
+        file = $CmdFile;
+        set = $Variables;
+        list = $DbList;
+        echo_all = ($Echo -eq 'all');
+        echo_errors = ($Echo -eq 'errors') -or ('errors' -in $Echo);
+        echo_queries = ($Echo -eq 'queries') -or ('queries' -in $Echo);
+        echo_hidden = ($Echo -eq 'hidden') -or ('hidden' -in $Echo);
+        log_file = $LogFile;
+        output = $OutFile;
+        quiet = $Quiet;
+        single_step = $SingleStepMode;
+        single_line = $SingleLineMode;
+        no_align = $NoAlign;
+        field_separator = $FieldSep;
+        html = $Html;
+        pset = $PSet;
+        record_separator = $RecordSep;
+        tuples_only = $TuplesOnly;
+        table_attr = $TableAttr;
+        field_separator_zero = $FieldSepZero;
+        record_separator_zero = $RecordSepZero;
+        host = $Conn.host;
+        port = $Conn.port;
+        username = $Conn.username;
+        no_password = $Conn.nopassword;
+        password = $Conn.password;
+    }
+
+    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+
+    if ([string]::IsNullOrEmpty($DbName) -and (-not [string]::IsNullOrEmpty($Conn.dbname))) {
+        $DbName = $Conn.dbname
+    }
+
+    if (-not [string]::IsNullOrEmpty($DbName)) {
+        $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $DbName)
+        if (-not [string]::IsNullOrEmpty($UserName)) {
+            $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $UserName)
+        }
+    }
+
+    Invoke-PgExec -Conn $Conn -ExecName 'psql' -ArgStr $ArgsStr
 }
 
 function Invoke-PgCtl {
@@ -342,9 +548,15 @@ function Invoke-PgCtl {
 
 function Invoke-PgExec($Conn, $ExecName, $ArgStr) {
     $FilePath = Add-PgPath -Path (Get-PgBin -Conn $Conn) -AddPath $ExecName 
-    $InvokeError = @()
-    $Result = Invoke-Expression ($FilePath + ' ' + $ArgStr) -ErrorVariable InvokeError
-    @{Result = $Result; Error = $InvokeError[0]}
+    $InvokeError = $null
+    $InvokeOut = $null
+    $ExprCommand = $FilePath + ' ' + $ArgStr
+    $StartTime = Get-Date
+    Invoke-Expression $ExprCommand -ErrorVariable InvokeError -OutVariable InvokeOut
+    $EndTime = Get-Date
+    $TimeSpan = New-TimeSpan -Start $StartTime -End $EndTime
+    $OK = ($InvokeError.Count -eq 0)
+    @{OK = $OK; Error = $InvokeError; Out = $InvokeOut; Start = $StartTime; End = $EndTime; TimeSpan = $TimeSpan}
 }
 
 function Get-PgBin($Conn) {
@@ -461,6 +673,7 @@ function Add-PgArg($ArgStr, $Name, $Value, $DefaultValue,  $ArgSep = ' ', $ArgEn
     
     if ($Value -eq $null) {$Value = $DefaultValue}
     if ($Value -eq $null) {return $ArgStr}
+    if ($Value -eq '') {return $ArgStr}
 
     $Name = $Name.Replace('_', '-')
 
@@ -477,7 +690,7 @@ function Add-PgArg($ArgStr, $Name, $Value, $DefaultValue,  $ArgSep = ' ', $ArgEn
     }
     else {
         $Value = [string]$Value
-        if ($Value -match '\s') {
+        if ($Value -match '[\s;.,-]') {
             $CurArg = $ArgEnter + $Name + $ValueSep + '"' + $Value + '"'
         }
         else {
@@ -490,6 +703,13 @@ function Add-PgArg($ArgStr, $Name, $Value, $DefaultValue,  $ArgSep = ' ', $ArgEn
     }
     $ArgStr    
 } 
+
+function Add-PgArgValueQuotes([string]$Value, $Quote = '"') {
+    if ((-not ($Value.StartsWith($Quote) -and $Value.EndsWith($Quote))) -and ($Value -match '[\s;.,-]')) {
+        $Value = $Quote + $Value + $Quote
+    }
+    $Value
+}
 
 function Test-PgDir($Path, [switch]$CreateIfNotExist) {
     if ($Path -eq $null) {Return}

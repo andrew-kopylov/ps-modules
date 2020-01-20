@@ -1,0 +1,7 @@
+{
+	"data": "d:\\pgdata",
+	"backupbase": "d:\\pgdata\\backups",
+	"backupwal": "d:\\pgdata\\backups",
+	"log": "d:\\pgdata\\backups\\logs",
+	"compress": true
+}

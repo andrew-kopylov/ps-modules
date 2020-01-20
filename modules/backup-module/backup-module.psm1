@@ -1,4 +1,5 @@
-﻿function Get-BakPolicy() {
+﻿
+function Get-BakPolicy() {
     param (
         $Path,
         $DatePattern,
@@ -21,9 +22,17 @@
     }
 }
 
-function Remove-BakFiles($BakPolicy) {
+function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse) {
+
+    if (-not [string]::IsNullOrEmpty($Path)) {
+        $BakPath = $Path
+    }
+    else {
+        $BakPath = $BakPolicy.Path
+    }
+
     $RemovedFiles = @()
-    $FilesWithDate = Get-BakFilesWithDate -BakPath $BakPolicy.Path -DatePattern $BakPolicy.DatePattern -Prefix $BakPolicy.Prefix -Postfix $BakPolicy.Postfix
+    $FilesWithDate = Get-BakFilesWithDate -BakPath $BakPath -DatePattern $BakPolicy.DatePattern -Prefix $BakPolicy.Prefix -Postfix $BakPolicy.Postfix -Recurse:$Recurse
     $FilesToRemove = Get-BakFilesToRemove -BakFilesWithDate $FilesWithDate -BakPolicy $BakPolicy
     foreach ($Item in $FilesToRemove) {
         $RemovedFiles += $Item.FullName
@@ -32,7 +41,7 @@ function Remove-BakFiles($BakPolicy) {
     $RemovedFiles
 }
 
-function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix) {
+function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix, [switch]$Recurse) {
 
     # yyyyMMdd-HHddss -> (?<y>\d{4})(?<mon>\d{2})(?<d>\d{2})-(?<h>\d{2})(?<min>\d{2})(?<s>\d{2})
     $DatePattern = $DatePattern.Replace('yyyy', '(?<y>\d{4})')
@@ -44,7 +53,7 @@ function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix) {
     $DatePattern = $DatePattern.Replace('ss', '(?<s>\d{2})')
     $DatePattern = '(\D|^)' + $DatePattern + '(\D|$)'
 
-    $BakFiles = Get-ChildItem -Path $BakPath -File -Filter ($Prefix + '*' + $Postfix)
+    $BakFiles = Get-ChildItem -Path $BakPath -File -Filter ($Prefix + '*' + $Postfix) -Recurse:$Recurse
 
     $FilesWithDate = @()
 
