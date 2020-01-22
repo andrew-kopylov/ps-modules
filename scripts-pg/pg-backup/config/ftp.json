@@ -1,0 +1,7 @@
+{
+	"srv": "localserver",
+	"rootPath": "/path/backups",
+	"usr": "ftpusr",
+	"pwd": "%ftppwd",
+	"isSecure": true
+}
