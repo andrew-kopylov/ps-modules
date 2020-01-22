@@ -1,0 +1,13 @@
+{
+	"shareData": "d:\\pgdata",
+	"shareBackup": "d:\\pgdata\\backup",
+	"shareFtpBackup": "/backup/test-bak",
+	"localDays": 30,
+	"localWeeks": 8,
+	"localMonths": 3,
+	"localYears": 0,
+	"ftpDays": 60,
+	"ftpWeeks": 16,
+	"ftpMonths": 12,
+	"ftpYears": 2
+}

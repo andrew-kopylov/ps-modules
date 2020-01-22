@@ -55,17 +55,13 @@ function Out-Log($Log, $Label, $Text, $OutHost, [switch]$InvokeThrow) {
     if ($InvokeThrow) {
         throw $OutLogText
     }
-
 }
 
 # AUXILIARY
 
 function Get-AuxLogText($Label, $Text) {
-    if ([String]::IsNullOrEmpty($Text)) {return ''}
     $FullLogText = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss');
-    foreach ($LabelItem in $Label) {
-        $FullLogText = Add-AuxLogString -Str $FullLogText -Add $LabelItem -Sep '.';
-    }
+    $FullLogText = Add-AuxLogString -Str $FullLogText -Add $Label -Sep '.';
     $FullLogText = Add-AuxLogString -Str $FullLogText -Add $Text -Sep ': ';
     $FullLogText
 }
@@ -114,9 +110,28 @@ function Add-AuxLogPath($Path, $AddPath, $Sep = '\') {
 }
 
 function Add-AuxLogString($Str, $Add, $Sep = '') {
-    if ([String]::IsNullOrEmpty($Str)) {return $Add}
-    elseif ([String]::IsNullOrEmpty($Add)) {return $Str}
-    else {return $Str + $Sep + $Add}
+    
+    $Result = ''
+
+    if ($Add -is [System.Array]) {
+        $Result = $Str
+        foreach ($AddItem in $Add) {
+            $Result = Add-AuxLogString -Str $Result -Add $AddItem -Sep $Sep
+        }
+    }
+    else {
+        if ([String]::IsNullOrEmpty($Str)) {
+            $Result = $Add
+        }
+        elseif ([String]::IsNullOrEmpty($Add)) {
+            $Result = $Str
+        }
+        else {
+            $Result = $Str + $Sep + $Add
+        }
+    }
+
+    $Result
 }
 
 Export-ModuleMember -Function '*-Log*'

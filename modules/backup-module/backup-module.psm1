@@ -1,6 +1,8 @@
 ﻿
 # backup-module: 1.0
 
+$FtpPostfix = '-up2ftp'
+
 function Get-BakPolicy() {
     param (
         $Path,
@@ -10,9 +12,12 @@ function Get-BakPolicy() {
         $Daily,
         $Weekly,
         $Monthly,
-        $Annual
+        $Annual,
+        $BakPolicy
     )
-    @{
+
+    # Init structure.
+    $Result = @{
         Path = $Path;
         DatePattern = $DatePattern;
         Prefix = $Prefix;
@@ -22,9 +27,93 @@ function Get-BakPolicy() {
         Monthly = $Monthly;
         Annual = $Annual;
     }
+    
+    # Copy null keys from BakPolicy.
+    if ($BakPolicy -ne $null) {
+        foreach ($Key in $BakPolicy.Keys) {
+            if ($Result[$Key] -eq $null) {
+                $Result[$Key] = $BakPolicy[$Key]
+            }
+        }
+    }
+
+    $Result
 }
 
-function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse, $FtpConn, $Log) {
+function Invoke-BakSendToFtpAndRemoveOutdated($BakPolicyLocal, $FtpConn, $BakPolicyFtp, [switch]$Recurse, $Log) {
+    
+    $LogLable = 'Send-Remove'
+
+    Out-Log -Log $Log -Label $LogLable, Start
+
+    Out-Log -Log $Log -Label $LogLable, Send2Ftp -Text ('Local: ' + $BakPolicyLocal.Path + ', FTP: ' + $BakPolicyFtp.Path)
+
+    # Send backup-fiels to FTP-server
+    Send-BakToFtp -BakPolicy $BakPolicyLocal -FtpConn $FtpConn -FtpPath $BakPolicyFtp.Path -Log $Log -Recurse:$Recurse | Out-Null
+
+    Out-Log -Log $Log -Label $LogLable, Remove-Local
+
+    # Remove outdated backup-files on local/net file system
+    Remove-BakFiles -BakPolicy $BakPolicyLocal -Recurse:$Recurse -Log $Log -OnlyUploadedToFtp | Out-Null
+
+    Out-Log -Log $Log -Label $LogLable, Remove-FTP
+
+    # Remove outdated backup-files on FTP-server
+    Remove-BakFiles -BakPolicy $BakPolicyFtp -Recurse:$Recurse -Log $Log -FtpConn $FtpConn | Out-Null
+
+    Out-Log -Log $Log -Label $LogLable, End
+
+}
+
+function Send-BakToFtp($BakPolicy, $LocalPath, $FtpConn, $FtpPath, [switch]$Recurse, $Log) {
+
+    $LogLabel = 'Send-BakToFtp'
+    
+    if ($LocalPath -eq $null) {
+        $LocalPath = $BakPolicy.Path
+    }
+    
+    Out-Log -Log $Log -Label $LogLabel, Start
+
+    $SendedFiles = @()
+    $CheckedFtpPaths = @()
+
+    $BakFiles = Get-AuxBakFilesWithDate -BakPolicy $BakPolicy -Path $LocalPath -FtpConn $null -Recurse:$Recurse
+    $BakFiles = $BakFiles.Where({-not $_.Item.BaseName.EndsWith($FtpPostfix)})
+
+    foreach ($BakFileLine in $BakFiles) {
+
+        $BakItem = $BakFileLine.Item
+
+        $RelativePath = ([string]$BakItem.DirectoryName).Substring($LocalPath.Length)
+        $FtpDirectoryPath = Add-FtpUrlPath -Url $FtpPath -SubUrl $RelativePath.Replace('\', '/')
+
+        if (($FtpDirectoryPath -gt '/') -and ($FtpDirectoryPath -notin $CheckedFtpPaths)) {
+            if (-not (Test-FtpItem -Conn $FtpConn -Path $FtpDirectoryPath -Recurse)) {
+                New-FtpDirectory -Conn $FtpConn -Path $FtpDirectoryPath -Force | Out-Null
+            }
+            $CheckedFtpPaths += $FtpDirectoryPath
+        }
+
+        Out-Log -Log $Log -Label $LogLabel, Send-backup -Text $BakItem.FullName
+
+        $FileSended = Send-FtpFile -Conn $FtpConn -Path $FtpDirectoryPath -LocalPath $BakItem.FullName
+        if ($FileSended) {
+            $SendedFiles += $BakItem
+            Rename-Item -Path $BakItem.FullName -NewName ($BakItem.BaseName + $FtpPostfix + $BakItem.Extension) -Force
+        }
+        else {
+            Out-Log -Log $Log -Label $LogLabel, Error -Text ('File not sended to ftp: ' + $BakItem.FullName)
+        }
+    
+    }
+
+    Out-Log -Log $Log -Label $LogLabel, End
+
+    $SendedFiles
+}
+
+function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse, $FtpConn, $Log, [switch]$OnlyUploadedToFtp) {
     
     $LogLabel = 'Remove-BakFiles'
 
@@ -37,11 +126,18 @@ function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse, $FtpConn, $Log) {
 
     $RemovedFiles = @()
 
+    $Prefix = $BakPolicy.Prefix
+    $Postfix = $BakPolicy.Postfix
+
     Out-Log -Log $Log -Label $LogLabel -Text ('Get all backup files: ' + $BakPath)
-    $FilesWithDate = Get-BakFilesWithDate -BakPath $BakPath -DatePattern $BakPolicy.DatePattern -Prefix $BakPolicy.Prefix -Postfix $BakPolicy.Postfix -Recurse:$Recurse -FtpConn $FtpConn
+    $FilesWithDate = Get-AuxBakFilesWithDate -BakPolicy $BakPolicy -Path $BakPath -Recurse:$Recurse -FtpConn $FtpConn
+
+    if (($FtpConn -eq $null) -and $OnlyUploadedToFtp) {
+        $FilesWithDate = $FilesWithDate.Where({$_.Item.BaseName.EndsWith($FtpPostfix)})
+    }
 
     Out-Log -Log $Log -Label $LogLabel -Text 'Get backup files to remove...'
-    [object[]]$FilesToRemove = (Get-BakFilesToRemove -BakFilesWithDate $FilesWithDate -BakPolicy $BakPolicy)
+    [object[]]$FilesToRemove = Get-AuxBakFilesToRemove -BakFilesWithDate $FilesWithDate -BakPolicy $BakPolicy
 
     if ($FilesToRemove.Count -gt 0) {
         
@@ -50,31 +146,37 @@ function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse, $FtpConn, $Log) {
         foreach ($FileItem in $FilesToRemove) {
             $Item = $FileItem.Item
             if ($FtpConn -ne $null) {
-                $IsRemoved = Remove-FtpItem -Conn $FtpConn -Path $Item.FilePath
+                $IsRemoved = Remove-FtpItem -Conn $FtpConn -Path $Item.Path
                 if ($IsRemoved) {
+                    Out-Log -Log $Log -Label $LogLabel -Text ('Removed: ' + $Item.FullName)
                     $RemovedFiles += $Item.FullName
+                }
+                else {
+                    Out-Log -Log $Log -Label $LogLabel, Error -Text ('Not removed: ' + $Item.Path)
                 }
             }
             else {
                 Remove-Item -Path $Item.FullName -Force
+                Out-Log -Log $Log -Label $LogLabel -Text ('Removed: ' + $Item.FullName)
                 $RemovedFiles += $Item.FullName
             }
         }
 
-        Out-Log -Log $Log -Label $LogLabel -Text 'Removed backup files:'
-        foreach ($FileName in $RemovedFiles) {
-            Out-Log -Log $Log -Label $LogLabel -Text ('- ' + $FileName)
-        }
+        Out-Log -Log $Log -Label $LogLabel, End -Text 'Removed backup files.'
 
     }
     else {
-        Out-Log -Log $Log -Label $LogLabel -Text 'No backup files to remove.'
+        Out-Log -Log $Log -Label $LogLabel, End -Text 'No backup files to remove.'
     }
 
     $RemovedFiles
 }
 
-function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix, [switch]$Recurse, $FtpConn) {
+function Get-AuxBakFilesWithDate($BakPolicy, $Path, [switch]$Recurse, $FtpConn) {
+
+    $DatePattern = $BakPolicy.DatePattern
+    $Prefix = $BakPolicy.Prefix
+    $Postfix = $BakPolicy.Postfix
 
     # yyyyMMdd-HHddss -> (?<y>\d{4})(?<mon>\d{2})(?<d>\d{2})-(?<h>\d{2})(?<min>\d{2})(?<s>\d{2})
     $DatePattern = $DatePattern.Replace('yyyy', '(?<y>\d{4})')
@@ -84,14 +186,13 @@ function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix, [switch
     $DatePattern = $DatePattern.Replace('HH', '(?<h>\d{2})')
     $DatePattern = $DatePattern.Replace('mm', '(?<min>\d{2})')
     $DatePattern = $DatePattern.Replace('ss', '(?<s>\d{2})')
-    $DatePattern = '(\D|^)' + $DatePattern + '(\D|$)'
 
     if ($FtpConn -ne $null) {
         $FtpItems = Get-FtpChildItem -Conn $FtpConn -Path $BakPath -Recurse:$Recurse;
         $BakFiles = $FtpItems.Where({$_.Name -Like ($Prefix + '*' + $Postfix)})
     }
     else {
-        $BakFiles = Get-ChildItem -Path $BakPath -File -Filter ($Prefix + '*' + $Postfix) -Recurse:$Recurse
+        $BakFiles = Get-ChildItem -Path $Path -File -Filter ($Prefix + '*' + $Postfix) -Recurse:$Recurse
     }
 
     $FilesWithDate = @()
@@ -118,15 +219,15 @@ function Get-BakFilesWithDate($BakPath, $DatePattern, $Prefix, $Postfix, [switch
     $FilesWithDate
 }
 
-function Get-BakFilesToRemove($BakFilesWithDate, $BakPolicy) {
+function Get-AuxBakFilesToRemove($BakFilesWithDate, $BakPolicy) {
 
-    $BakDates = $BakFilesWithDate | Select-Object -Property Date -Unique
+    [object[]]$BakDates = $BakFilesWithDate | Select-Object -Property Date -Unique
 
     $BakDatesToKeep = @()
-    $BakDatesToKeep += Get-BakDatesToKeep -BakDates $BakDates -Period 'y' -PeriodCount $BakPolicy.Annual
-    $BakDatesToKeep += Get-BakDatesToKeep -BakDates $BakDates -Period 'm' -PeriodCount $BakPolicy.Monthly
-    $BakDatesToKeep += Get-BakDatesToKeep -BakDates $BakDates -Period 'w' -PeriodCount $BakPolicy.Weekly
-    $BakDatesToKeep += Get-BakDatesToKeep -BakDates $BakDates -Period 'd' -PeriodCount $BakPolicy.Daily
+    $BakDatesToKeep += Get-AuxBakDatesToKeep -BakDates $BakDates -Period 'y' -PeriodCount $BakPolicy.Annual
+    $BakDatesToKeep += Get-AuxBakDatesToKeep -BakDates $BakDates -Period 'm' -PeriodCount $BakPolicy.Monthly
+    $BakDatesToKeep += Get-AuxBakDatesToKeep -BakDates $BakDates -Period 'w' -PeriodCount $BakPolicy.Weekly
+    $BakDatesToKeep += Get-AuxBakDatesToKeep -BakDates $BakDates -Period 'd' -PeriodCount $BakPolicy.Daily
     $BakDatesToKeep  = $BakDatesToKeep | Select-Object -Unique | Sort-Object
 
     $BakFilesToRemove = @()
@@ -141,33 +242,33 @@ function Get-BakFilesToRemove($BakFilesWithDate, $BakPolicy) {
     $BakFilesToRemove
 }
 
-function Get-BakDatesToKeep($BakDates, $Period, $PeriodCount) {
+function Get-AuxBakDatesToKeep($BakDates, $Period, $PeriodCount) {
     
-    $NextPeriodBegin = Get-BakPeriodBegin -Date (Get-Date) -Period $Period
-    $NextPeriodEnd = Get-BakNextPeriod -Date $NextPeriodBegin -Period $Period
+    $NextPeriodBegin = Get-AuxBakPeriodBegin -Date (Get-Date) -Period $Period
+    $NextPeriodEnd = Get-AuxBakNextPeriod -Date $NextPeriodBegin -Period $Period
 
     $BakDatesToKeep = @()
     for ($i = 0; $i -le $PeriodCount; $i++) {
         $PeriodBegin = $NextPeriodBegin 
         $PeriodEnd = $NextPeriodEnd
-        $FindedDates = $BakDates.Where({($_.Date -ge $PeriodBegin) -and ($_.Date -lt $PeriodEnd)}) | Sort-Object -Property Date | Select-Object -Property Date -First 1
+        $FindedDates = ([PSCustomObject[]]$BakDates).Where({($_.Date -ge $PeriodBegin) -and ($_.Date -lt $PeriodEnd)}) | Sort-Object -Property Date | Select-Object -Property Date -First 1
         if ($FindedDates.Date -ne $null) {
             $BakDatesToKeep += $FindedDates.Date
         }
         # Next period is erler
-        $NextPeriodBegin = Get-BakNextPeriod -Date $PeriodBegin -Period $Period -PeriodCount -1 
+        $NextPeriodBegin = Get-AuxBakNextPeriod -Date $PeriodBegin -Period $Period -PeriodCount -1 
         $NextPeriodEnd = $PeriodBegin
     }
 
     $BakDatesToKeep
 }
 
-function Get-BakPeriodBegin([datetime]$Date, $Period) {
+function Get-AuxBakPeriodBegin([datetime]$Date, $Period) {
     if ($Period -like 'd') {
         return [datetime]::new($Date.Year, $Date.Month, $Date.Day) 
     }
     elseif ($Period -like 'w') {
-        $Date = Get-BakPeriodBegin -Date $Date -Period 'd'
+        $Date = Get-AuxBakPeriodBegin -Date $Date -Period 'd'
         return $Date.AddDays(-$Date.DayOfWeek.value__ + 1)
     }
     elseif ($Period -like 'm') {
@@ -178,7 +279,7 @@ function Get-BakPeriodBegin([datetime]$Date, $Period) {
     }
 }
 
-function Get-BakNextPeriod([datetime]$Date, $Period, [int]$PeriodCount = 1) {
+function Get-AuxBakNextPeriod([datetime]$Date, $Period, [int]$PeriodCount = 1) {
     if ($Period -like 'd') {
         return $Date.AddDays($PeriodCount)
     }
@@ -192,3 +293,5 @@ function Get-BakNextPeriod([datetime]$Date, $Period, [int]$PeriodCount = 1) {
         return $Date.AddYears($PeriodCount)
     }
 }
+
+Export-ModuleMember -Function '*-Bak*'

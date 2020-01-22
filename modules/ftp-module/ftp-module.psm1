@@ -58,10 +58,15 @@ function Send-FtpFile($Conn, $Path, $LocalPath) {
     } while($ReadedData -gt 0)
 			
 	$File.Close()
-    $Response.Close()
-    $Response.Dispose()
 
-    Get-FtpItem -Conn $Conn -Path $Path
+    $OK = $false
+    if ($Response -ne $null) {
+        $Response.Close()
+        $Response.Dispose()
+        $OK = $true
+    }
+
+    $OK
 }
 
 function Receive-FtpFile($Conn, $Path, $LocalPath) {
@@ -83,17 +88,17 @@ function Receive-FtpFile($Conn, $Path, $LocalPath) {
         $LocalFile.Write($ReadBuffer, 0, $ReadLength)
         $ReadLength = $ResponseStream.Read($ReadBuffer, 0, $Buffer.Length)
     }
+    $ResponseStream.Close()
     $Response.Close()
     $Response.Dispose()
-
     $LocalFile.Close()
 
     Get-Item -Path $LocalPath
 }
 
-function Remove-FtpItem($Conn, $Path, [switch]$CheckFile) {
+function Remove-FtpItem($Conn, $Path, [switch]$CheckExistence) {
     
-    if ($CheckFile) {
+    if ($CheckExistence) {
         $Item = Get-FtpItem -Conn $Conn -Path $Path
         if ($Item -eq $null) {
             return $false
@@ -110,26 +115,62 @@ function Remove-FtpItem($Conn, $Path, [switch]$CheckFile) {
     }
 
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
+
+    $OK = $false
     if ($Response -ne $null) {
         $Response.Close()
         $Response.Dispose()
-    }
-    else {
-        return $false
+        $OK = $true
     }
 
-    $true
+    $OK
 }
 
-function New-FtpDirectory($Conn, $Path) {
+function New-FtpDirectory($Conn, $Path, [switch]$Force, [switch]$CheckExistance) {
+
+    if ([string]::IsNullOrEmpty($Path) -or ($Path -eq '/')) {
+        return $null
+    }
+
+    if ($CheckExistance) {
+        $FindedItem = Get-FtpItem -Conn $Conn -Path $Path
+        if ($FindedItem -ne $null) {
+            return $FindedItem
+        }
+    }
+
+    if ($Force) {
+        $FtpSplit = Split-FtpUrl -Url $Path
+        if ($FtpSplit.Parent -gt '/') {
+            if (-not (Test-FtpItem -Conn $Conn -Path $FtpSplit.Parent -Recurse:$true)) {
+                $SubPath = New-FtpDirectory -Conn $Conn -Path $FtpSplit.Parent -Force:$true
+            }
+        }
+    }
+
     $Request = Get-FtpRequest -Conn $Conn -Path $Path -Method ([System.Net.WebRequestMethods+Ftp]::MakeDirectory)
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
-    $Response.Close()
-    $Response.Dispose()
-    Get-FtpItem -Conn $Conn -Path $Path
+
+    $OK = $false
+    if ($Response -ne $null) {
+        $Response.Close()
+        $Response.Dispose()
+        $OK = $true
+    }
+    
+    $OK
 }
 
-function Test-FtpItem($Conn, $Path) {
+function Test-FtpItem($Conn, $Path, [switch]$Recurse) {
+    if ($Recurse) {
+        $UrlSplit = Split-FtpUrl -Url $Path
+        if ($UrlSplit.Parent -gt '/') {
+            $Result = Test-FtpItem -Conn $Conn -Path $UrlSplit.Parent -Recurse:$true
+            if (-not $Result) {
+                return $false
+            }
+        }
+    }
     $Result = [bool]((Get-FtpItem -Conn $Conn -Path $Path) -ne $null)
     $Result
 }
@@ -137,14 +178,8 @@ function Test-FtpItem($Conn, $Path) {
 function Get-FtpItem($Conn, $Path) {
 
     $SplitUrl = Split-FtpUrl -Url $Path
-    if ([string]::IsNullOrEmpty($SplitUrl.Child)) {
-        $Child = $Path
-        $SubPath = '/'
-    }
-    else {
-        $Child = $SplitUrl.Child
-        $SubPath = $SplitUrl.Parent
-    }
+    $SubPath = $SplitUrl.Parent
+    $Child = $SplitUrl.Child
 
     $Item = Get-FtpChildItem -Conn $Conn -Path $SubPath | Where-Object -FilterScript {$_.Name -Like $Child}
   
@@ -199,7 +234,7 @@ function Get-FtpChildItem($Conn, $Path, [switch]$Recurse) {
                 BaseName = $FileInfo.BaseName;
                 Extension = $FileInfo.Extension;
                 Parent = $Path;
-                FilePath = (Add-FtpUrlPath -Url $Path -SubUrl $Matches.name);
+                Path = (Add-FtpUrlPath -Url $Path -SubUrl $Matches.name);
                 FullName = (Join-FtpUrlPaths -Paths $Conn.RootPath, $Path, $Matches.name)
             }
             $FtpItems += $Item
@@ -207,6 +242,7 @@ function Get-FtpChildItem($Conn, $Path, [switch]$Recurse) {
         $Line = $Stream.ReadLine()
     }
 
+    $Stream.Close()
     $Response.Close()
     $Response.Dispose()
 
@@ -234,7 +270,7 @@ function Get-FtpRequest($Conn, $Path, $Method) {
         $Proto = 'ftp://'
     }
 
-    $Url = Join-FtpUrlPaths -Paths @($Proto, $Conn.Srv, $Conn.RootPath, $Path)
+    $Url = Join-FtpUrlPaths -Paths $Proto, $Conn.Srv, $Conn.RootPath, $Path
 
     $FtpRequest = [System.Net.FtpWebRequest]::Create($Url)
     $FtpRequest.Credentials = $Conn.Credentials
@@ -246,18 +282,29 @@ function Get-FtpRequest($Conn, $Path, $Method) {
 
 }
 
-function Split-FtpUrl($Url) {
-    $Result = @{Parent = ''; Child = ''}
-    $Pattern = '^(?<parent>\S+)\/(?<child>\S+?)\/{0,1}$'
-    if ($Url -match $Pattern) {
-        $Result.Parent = $Matches.parent
-        $Result.Child = $Matches.child
+function Split-FtpUrl([string]$Url) {
+
+    $Return = @{Parent = ''; Child = ''}
+
+    if ($Url.EndsWith('/')) {
+        $Url = $Url.Substring(0, $Url.Length -1)
+    }
+
+    $LastSep = $Url.LastIndexOf('/')
+    if ($LastSep -eq -1) {
+        $Return.Parent = '/'
+        $Return.Child = $Url
     }
     else {
-        $Result.Parent = $Url
-        $Result.Child = ''
+        $Return.Parent = $Url.Substring(0, $LastSep)
+        $Return.Child = $Url.Substring($LastSep + 1)
     }
-    $Result
+
+    if ([string]::IsNullOrEmpty($Return.Parent)) {
+        $Return.Parent = '/'
+    }
+
+    $Return
 }
 
 function Join-FtpUrlPaths($Paths) {
@@ -272,16 +319,19 @@ function Join-FtpUrlPaths($Paths) {
 function Add-FtpUrlPath($Url, $SubUrl) {
     $Sep = '/'
     if ([string]::IsNullOrEmpty($Url)) {
-        $Url = $SubUrl
+        $Result = $SubUrl
+    }
+    elseif ([string]::IsNullOrEmpty($SubUrl)) {
+        $Result = $Url
     }
     elseif ($Url.EndsWith($Sep) -xor $SubUrl.StartsWith($Sep)) {
-        $Url = $Url + $SubUrl
+        $Result = $Url + $SubUrl
     } 
     elseif (-not $SubUrl.StartsWith($Sep)) {
-        $Url = $Url + $Sep + $SubUrl
+        $Result = $Url + $Sep + $SubUrl
     }
     else {
-        $Url = $Url + $SubUrl.Substring(1)
+        $Result = $Url + $SubUrl.Substring(1)
     }
-    $Url
+    $Result
 }
