@@ -3,8 +3,17 @@
 
 # PSArgs - hashtable with arguments setteld in format: "-c ClusterCode -b BaseName".
 
+function Initialize-PgcClusters($Config, $Clusters, $Log, $PSArgs) {
+    $LogLabel = 'Init-Clusters'
+    Out-Log -Log $Log -Label $LogLabel, Start
+    foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
+        Init-AuxCluster -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs
+    }
+    Out-Log -Log $Log -Label $LogLabel, End
+}
 
-function Backup-PgaClusters($Config, $Clusters, $Log, $PSArgs) {
+function Backup-PgcClusters($Config, $Clusters, $Log, $PSArgs) {
     $LogLabel = 'Backup-Clusters'
     Out-Log -Log $Log -Label $LogLabel, Start
     foreach ($ClusterItem in $Clusters) {
@@ -14,7 +23,7 @@ function Backup-PgaClusters($Config, $Clusters, $Log, $PSArgs) {
     Out-Log -Log $Log -Label $LogLabel, End
 }
 
-function Backup-PgaWal($Config, $Clusters, $Log, $PSArgs) {
+function Backup-PgcWal($Config, $Clusters, $Log, $PSArgs) {
 
     #postgresql.conf parameters:
     #wal_level = replica
@@ -78,7 +87,7 @@ function Backup-PgaWal($Config, $Clusters, $Log, $PSArgs) {
     }
 }
 
-function Backup-PgaBases($Config, $Clusters, $Log, $PSArgs) {
+function Backup-PgcBases($Config, $Clusters, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Bases'
 
@@ -92,7 +101,7 @@ function Backup-PgaBases($Config, $Clusters, $Log, $PSArgs) {
     Out-Log -Log $Log -Label $LogLabel, End
 }
 
-function Remove-PgaClusterBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
+function Remove-PgcClusterBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Remove-ClusterBackups'
 
@@ -108,7 +117,7 @@ function Remove-PgaClusterBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
 }
 
-function Remove-PgaBaseBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
+function Remove-PgcBaseBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Remove-BaseBackups'
 
@@ -123,7 +132,7 @@ function Remove-PgaBaseBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
 }
 
-function Send-PgaWal2Ftp($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
+function Send-PgcWal2Ftp($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Send-WAL2FTP'
 
@@ -139,9 +148,106 @@ function Send-PgaWal2Ftp($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
 
 # AUXILUARY
 
+function Init-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
+
+    $LogLabel = 'Init-Cluster'
+  
+    $ClusterData = Add-PgPath -Path $Config.shareData -AddPath $ClusterItem.code
+    $DefaultConf = Add-PgPath -Path $ClusterData -AddPath postgresql.conf
+
+    if (Test-Path -Path $DefaultConf) {
+        return
+    }
+
+    Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code + ', port ' + $ClusterItem.port)
+
+    Test-PgDir -Path $ClusterData
+
+    # Paths to config files.
+    $ShareConfDir = Add-PgPath -Path $Config.shareData -AddPath conf.d
+    $ShareConf = Add-PgPath -Path $ShareConfDir -AddPath share.conf
+    $ClusterConf = Add-PgPath -Path $ShareConfDir -AddPath ($ClusterItem.code + '.conf')
+
+    # Init cluster.
+    Out-Log -Log $Log -Label $LogLabel, InitDb -Text ('pgdata: ' + $ClusterData)
+
+    $Return = Invoke-PgInit -Auth trust -PgData $ClusterData -Encoding UTF8 -UserName postgres
+    if (-not $Return.OK) {
+        Out-Log -Log $Log -Label $LogLabel, InitDb-Error -Text $Return.Error -InvokeThrow
+    }
+    Out-Log -Log $Log -Label $LogLabel, InitDb-Success -Text $Return.Out
+
+    # Create junction to share config directory.
+    New-Item -Path (Add-PgPath -Path $ClusterData -AddPath conf.d) -ItemType Junction -Value $ShareConfDir | Out-Null
+
+    # Include share and cluster configs to default config.
+    ('') | Out-File -FilePath $DefaultConf -Append -Encoding ascii
+    ('# INCLUDE SHARE AND CLUSTER CONFIGS') | Out-File -FilePath $DefaultConf -Append -Encoding ascii
+    ('include = ''conf.d/share.conf''') | Out-File -FilePath $DefaultConf -Append -Encoding ascii
+    ('include = ''conf.d/' + $ClusterItem.code + '.conf''') | Out-File -FilePath $DefaultConf -Append -Encoding ascii
+
+    # Test/create local-trust pg_hba.conf (host-based-authentication.
+    $LocalTrustHbaConf = Add-PgPath -Path $ShareConfDir -AddPath pg_hba-local-trust.conf
+    if (-not (Test-Path -Path $LocalTrustHbaConf)) {
+        '# TYPE DATABASE USER ADDRESS METHOD' | Out-File -FilePath $LocalTrustHbaConf -Encoding ascii
+        'host all all 127.0.0.1/32 trust' | Out-File -FilePath $LocalTrustHbaConf -Encoding ascii -Append
+        'host all all ::1/128 trust' | Out-File -FilePath $LocalTrustHbaConf -Encoding ascii -Append
+    }
+
+    # Create cluster config with customized port.
+    ('port = ' + $ClusterItem.port + ' # Cluster port') | Out-File -FilePath $ClusterConf -Encoding ascii
+    # Add trusted authentication.
+    ('hba_file = ''' + $LocalTrustHbaConf.Replace('\', '/') + ''' # Cluster port') | Out-File -FilePath $ClusterConf -Encoding ascii -Append
+
+    $Conn = Get-PgConn -Port $ClusterItem.port -Host localhost -PgData $ClusterData
+
+    Out-Log -Log $Log -Label $LogLabel, Add-Roles
+
+    # Start cluster to create users and passwords and stop it.
+    $Return = Invoke-PgCtl -Command start -Conn $Conn
+    if (-not $Return.OK) {
+        Out-Log -Log $Log -Label $LogLabel, StartPG-Error -Text $Return.Error -InvokeThrow
+    }
+    Start-Sleep -Seconds 3 # start service
+    if (-not [string]::IsNullOrEmpty($Config.postgresPwd)) {
+        Invoke-PgSql -Conn $Conn -Command ('alter role postgres with password ''' + $Config.postgresPwd + '''')
+    }
+    if (-not [string]::IsNullOrEmpty($Config.appUsr)) {
+        Invoke-PgSql -Conn $Conn -Command ('create role ' + $Config.appUsr + ' with superuser login password ''' + $ClusterItem.appUsrPwd + '''')
+    }
+    Invoke-PgCtl -Command stop -Conn $Conn
+
+    Out-Log -Log $Log -Label $LogLabel, Create-Service
+
+    # Create service
+    Invoke-PgCtl -Command register -Conn $Conn -ServiceName ('pg-' + $ClusterItem.code) -ServiceUsr $Config.serviceUsr -ServicePwd $Config.servicePwd
+
+    # Create cluster config with customized port.
+    ('port = ' + $ClusterItem.port + ' # Cluster port') | Out-File -FilePath $ClusterConf -Encoding ascii
+
+    # Set owner to new files
+    if (-not [string]::IsNullOrEmpty($Config.serviceUsr)) {
+        Out-Log -Log $Log -Label $LogLabel, Set-DataOwner
+        icacls "$ClusterData" /setowner "$Config.serviceUsr" /T
+        icacls "$ClusterConf" /setowner "$Config.serviceUsr" /T
+    }
+
+    Out-Log -Log $Log -Label $LogLabel, Start-Service
+
+    # Start pg-service
+    Start-Service -Name ('pg-' + $ClusterItem.code)
+        
+    Out-Log -Log $Log -Label $LogLabel, End
+}
+
 function Backup-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Cluster'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
   
     Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code + ', port ' + $ClusterItem.port)
         
@@ -176,6 +282,11 @@ function Backup-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
 function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Bases'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
 
     Out-Log -Log $Log -Label $LogLabel, Cluster-Start -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
 
@@ -214,6 +325,11 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 function Remove-AuxClusterFullBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Remove-ClusterFullBackups'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
   
     Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code)
         
@@ -241,6 +357,11 @@ function Remove-AuxClusterFullBackups($Config, $ClusterItem, $Log, $PSArgs, $Ftp
 function Remove-AuxClusterWalBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Remove-ClusterWALBackups'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
   
     Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code)
         
@@ -267,6 +388,11 @@ function Remove-AuxClusterWalBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpC
 function Remove-AuxClusterBaseBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Remove-ClusterBaseBackups'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
   
     Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code)
         
@@ -300,6 +426,11 @@ function Remove-AuxClusterBaseBackups($Config, $ClusterItem, $Log, $PSArgs, $Ftp
 function Send-AuxClusterWal2Ftp($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) {
 
     $LogLabel = 'Send-ClusterWAL2FTP'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
 
     Out-Log -Log $Log -Label $LogLabel, Start -Text ('code ' + $ClusterItem.code)
 
@@ -348,4 +479,9 @@ function Test-AuxBase($Base, $PSArgs) {
     $Test
 }
 
-Export-ModuleMember -Function '*-Pga*'
+function Test-AuxClusterExists($Config, $Cluster) {
+    $DefaultConf = Add-PgPath -Path $Config.shareData -AddPath $ClusterItem.code, postgresql.conf
+    Test-Path -Path $DefaultConf
+}
+
+Export-ModuleMember -Function '*-Pgc*'

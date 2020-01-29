@@ -1,14 +1,27 @@
 [
 	{
 		"code": "test3",
-		"port": "5433"
+		"port": "5433",
+		"appUsrPwd": "0123"
 	},
 	{
 		"code": "test4",
-		"port": "5434"
+		"port": "5434",
+		"appUsrPwd": "0124"
 	},	
 	{
 		"code": "test5",
-		"port": "5435"
+		"port": "5435",
+		"appUsrPwd": "0125"
+	},
+	{
+		"code": "test7",
+		"port": "5437",
+		"appUsrPwd": "0127"
+	},
+	{
+		"code": "test8",
+		"port": "5438",
+		"appUsrPwd": "0128"
 	}
 ]

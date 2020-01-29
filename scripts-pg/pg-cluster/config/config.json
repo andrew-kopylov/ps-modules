@@ -1,7 +1,11 @@
 {
+	"appUsr": "usr1c",
+	"serviceUsr": "",
+	"servicePwd": "",
+	"postgresPwd": "1234",
 	"shareData": "d:\\pgdata",
 	"shareBackup": "d:\\pgdata\\backup",
-	"shareFtpBackup": "/backup/test-bak",
+	"shareFtpBackup": "/pg-cluster",
 	"localDays": 30,
 	"localWeeks": 8,
 	"localMonths": 3,
