@@ -1,10 +1,14 @@
 
 # EXPORT
 
+# PSArgs - hashtable with arguments setteld in format: "-c ClusterCode -b BaseName".
+
+
 function Backup-PgaClusters($Config, $Clusters, $Log, $PSArgs) {
     $LogLabel = 'Backup-Clusters'
     Out-Log -Log $Log -Label $LogLabel, Start
     foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
         Backup-AuxCluster -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs
     }
     Out-Log -Log $Log -Label $LogLabel, End
@@ -81,6 +85,7 @@ function Backup-PgaBases($Config, $Clusters, $Log, $PSArgs) {
     Out-Log -Log $Log -Label $LogLabel, Start
 
     foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
         Backup-AuxClusterBases -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs
     }
 
@@ -94,6 +99,7 @@ function Remove-PgaClusterBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
     Out-Log -Log $Log -Label $LogLabel, Start
 
     foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
         Remove-AuxClusterFullBackups -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs -FtpConn $FtpConn
         Remove-AuxClusterWalBackups -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs -FtpConn $FtpConn
     }
@@ -109,6 +115,7 @@ function Remove-PgaBaseBackups($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
     Out-Log -Log $Log -Label $LogLabel, Start
 
     foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
         Remove-AuxClusterBaseBackups -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs -FtpConn $FtpConn
     }
 
@@ -123,6 +130,7 @@ function Send-PgaWal2Ftp($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
     Out-Log -Log $Log -Label $LogLabel, Start
 
     foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
         Send-AuxClusterWal2Ftp -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs -FtpConn $FtpConn
     }
 
@@ -181,6 +189,7 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
         
         if ($BaseItem.Name -like 'template0') {continue}
         if ($BaseItem.Name -like '*test') {continue}
+        if (-not (Test-AuxBase -Base $BaseItem -PSArgs $PSArgs)) {continue}
 
         Out-Log -Log $Log -Label $LogLabel, Base-Start -Text $BaseItem.Name
 
@@ -264,8 +273,13 @@ function Remove-AuxClusterBaseBackups($Config, $ClusterItem, $Log, $PSArgs, $Ftp
     $BackupDir = Add-PgPath -Path $Config.sharebackup -AddPath bases, $ClusterItem.Code
     $FtpBackupDir = Join-FtpUrlPaths -Paths $Config.shareFtpBackup, bases, $ClusterItem.Code
 
+    $BaseName = ''
+    if ($PSArgs -ne $null) {
+        $BaseName = [string]$PSArgs.b
+    }
+
     # Patterns
-    $BakPolicyTmpl = Get-BakPolicy -DatePattern '_yyyyMMdd-' -Prefix '' -Postfix '.backup'
+    $BakPolicyTmpl = Get-BakPolicy -DatePattern ($BaseName + '_yyyyMMdd-') -Prefix '' -Postfix '.backup'
 
     # Store periods
     $BakPolicyTmplLocal = Get-BakPolicy  -Daily $Config.localDays -Weekly $Config.localWeeks -Monthly $Config.localMonths -Annual $Config.localYears -BakPolicy $BakPolicyTmpl
@@ -298,6 +312,40 @@ function Send-AuxClusterWal2Ftp($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) 
     Send-BakToFtp -BakPolicy $BakPolicyTmpl -LocalPath $BackupDir -FtpConn $FtpConn -FtpPath $FtpBackupDir -Log $Log | Out-Null
 
     Out-Log -Log $Log -Label $LogLabel, End
+}
+
+function Test-AuxCluster($Cluster, $PSArgs) {
+    $Test = $true
+    if ($PSArgs -ne $null) {
+        if (-not [string]::IsNullOrEmpty($PSArgs.c)) {
+            $ClusterCode = ''
+            if ($Cluster -is [string]) {
+                $ClusterCode = $Cluster
+            }
+            else {
+                $ClusterCode = $Cluster.code
+            }
+            $Test = ($ClusterCode -like $PSArgs.c)
+        }       
+    }
+    $Test
+}
+
+function Test-AuxBase($Base, $PSArgs) {
+    $Test = $true
+    if ($PSArgs -ne $null) {
+        if (-not [string]::IsNullOrEmpty($PSArgs.b)) {
+            $BaseName = ''
+            if ($Base -is [string]) {
+                $BaseName = $Base
+            }
+            else {
+                $BaseName = $Base.Name
+            }
+            $Test = ($BaseName -like $PSArgs.b)
+        }       
+    }
+    $Test
 }
 
 Export-ModuleMember -Function '*-Pga*'

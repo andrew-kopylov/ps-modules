@@ -1,10 +1,10 @@
 
 Import-Module pg-archive-module -Force
 
+$PSArgs = Get-PgPSArgs -ArgsArray $args
 $Config = Get-Content -Path ($PSScriptRoot + '\config\config.json') | ConvertFrom-Json
 $Clusters = Get-Content -Path ($PSScriptRoot + '\config\clusters.json') | ConvertFrom-Json 
 $Log = New-Log -ScriptPath $PSCommandPath
-$PSArgs = Get-PgPSArgs -ArgsArray $args
 
 if ($args[0] -eq 'wal') {
 
