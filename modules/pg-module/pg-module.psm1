@@ -1,5 +1,5 @@
 ﻿
-# pg-module: version 2.2
+# pg-module: version 2.3
 
 function Get-PgConn {
     param (
@@ -121,6 +121,41 @@ function Invoke-PgRestoreSimple {
 }
 
 # Low level functions
+
+function Invoke-PgInit {
+    param (
+        [ValidateSet('trust', 'md5', 'reject', 'password', 'scram-sha-256', 'gss', 'sspi', 'ident', 'peer', 'ldap', 'radius', 'cert')]
+        $Auth,
+        [ValidateSet('trust', 'md5', 'reject', 'password', 'scram-sha-256', 'gss', 'sspi', 'ident', 'peer', 'ldap', 'radius', 'cert')]
+        $AuthHost,
+        [ValidateSet('trust', 'md5', 'reject', 'password', 'scram-sha-256', 'gss', 'sspi', 'ident', 'peer', 'ldap', 'radius', 'cert')]
+        $AuthLocal,
+        $PgData,
+        [ValidateSet('UTF8', 'SQL_ASCII', 'WIN866', 'WIN1251', 'KOI8R', 'ISO_8859_5')]
+        $Encoding,
+        $Locale,
+        [switch]$NoLocale,
+        $PasswordFile,
+        $UserName,
+        $WalDir
+    )
+
+    $ArgList = [ordered]@{
+        auth = $Auth;
+        auth_host = $AuthHost;
+        auth_local = $AuthLocal;
+        pgdata = $PgData;
+        encoding = $Encoding;
+        locale = $Locale;
+        no_locale = $NoLocale;
+        pwfile = $PasswordFile;
+        username = $UserName;
+        waldir = $WalDir;
+    }
+    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+
+    Invoke-PgExec -Conn $Conn -ExecName 'initdb' -ArgStr $ArgsStr    
+}
 
 function Invoke-PgBasebackup {
     param (
@@ -543,19 +578,27 @@ function Invoke-PgCtl {
 
     $ArgStr = Get-PgArgs -ArgList $ArgList2 -ArgStr $ArgStr
 
-    Invoke-PgExec -Conn $Conn -ExecName 'pg_ctl' -ArgStr $ArgStr
+    $StartProcess = ($Command -in @('start', 'restart'))
+
+    Invoke-PgExec -Conn $Conn -ExecName 'pg_ctl' -ArgStr $ArgStr -StartProcess:$StartProcess
 }
 
-function Invoke-PgExec($Conn, $ExecName, $ArgStr) {
+function Invoke-PgExec($Conn, $ExecName, $ArgStr, [switch]$StartProcess) {
     $FilePath = Add-PgPath -Path (Get-PgBin -Conn $Conn) -AddPath $ExecName 
     $InvokeError = $null
     $InvokeOut = $null
-    $ExprCommand = $FilePath + ' ' + $ArgStr
     $StartTime = Get-Date
-    Invoke-Expression $ExprCommand -ErrorVariable InvokeError -OutVariable InvokeOut
+    if ($StartProcess) {
+        $Process = Start-Process -FilePath $FilePath -ArgumentList $ArgStr -NoNewWindow  -ErrorVariable InvokeError -OutVariable InvokeOut -PassThru
+        $OK = ($InvokeError.Count -eq 0) -and ($Process.ExitCode -in @($null, 0))
+    }
+    else {
+        $ExprCommand = $FilePath + ' ' + $ArgStr
+        Invoke-Expression $ExprCommand -ErrorVariable InvokeError -OutVariable InvokeOut
+        $OK = ($InvokeError.Count -eq 0)
+    }
     $EndTime = Get-Date
     $TimeSpan = New-TimeSpan -Start $StartTime -End $EndTime
-    $OK = ($InvokeError.Count -eq 0)
     @{OK = $OK; Error = $InvokeError; Out = $InvokeOut; Start = $StartTime; End = $EndTime; TimeSpan = $TimeSpan}
 }
 
