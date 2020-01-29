@@ -1,5 +1,7 @@
 ﻿
-# ftp-module: 1.0
+# ftp-module: 1.1
+
+# EXPORT
 
 function Get-FtpConn($Srv, $Usr, $Pwd, $RootPath, $IsSecure, $BufferSize = 64KB) {
     @{
@@ -199,46 +201,49 @@ function Get-FtpChildItem($Conn, $Path, [switch]$Recurse) {
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
     $Stream = New-Object System.IO.StreamReader($Response.GetResponseStream(), [System.Text.Encoding]::Default)
 
-    # drw-rw-rw- 1 ftp ftp            0 Jun 10 10:16 directoryname
-    # -rw-rw-rw- 1 ftp ftp     32866304 Sep 28 23:00 filename
-
-    $Pattern = @()
-    $Pattern += '(?<dir>[-d])(?<right>[-rwx]{9})'
-    $Pattern += '(?<link>\d+)'
-    $Pattern += '(?<usr>\S+)'
-    $Pattern += '(?<grp>\S+)'
-    $Pattern += '(?<size>\d+)'
-    $Pattern += '(?<month>\w+)'
-    $Pattern += '(?<day>\d+)'
-    $Pattern += '(?<time>\d{1,2}:\d{2})'
-    $Pattern += '(?<name>.+)'
-    $Pattern = '^' + [String]::Join('\s+', $Pattern) + '$'
+    $mode = '' # linux/iis6
+    $LinuxPattern = Get-AuxLinuxPattern
+    $IIS6Pattern = Get-AuxII6Pattern
 
     $FtpItems = @()
 
     $Line = $Stream.ReadLine()
     while ($Line -ne $null) {
-        if ($Line -match $Pattern) {
-            $FileInfo = [System.IO.FileInfo]$Matches.name;
-            $Item = New-Object PSCustomObject -Property @{
-                Dir = ($Matches.dir -eq 'd');
-                Right = $Matches.right;
-                Link = [int]$Matches.link;
-                User = $Matches.usr;
-                Group = $Matches.grp;
-                Size = [long]$Matches.size;
-                Month = $Matches.month;
-                Day = [int]$Matches.day;
-                Time = $Matches.time;
-                Name = $Matches.name;
-                BaseName = $FileInfo.BaseName;
-                Extension = $FileInfo.Extension;
-                Parent = $Path;
-                Path = (Add-FtpUrlPath -Url $Path -SubUrl $Matches.name);
-                FullName = (Join-FtpUrlPaths -Paths $Conn.RootPath, $Path, $Matches.name)
+
+        $ItemProp = $null
+
+        # Get ItemProp hashtable
+        if (($mode -eq 'linux') -or ($mode -eq '')) {
+            $ItemProp = Get-AuxLinuxItemProp -Line $Line -Pattern $LinuxPattern
+            if ($mode -eq '') {
+                if ($ItemProp -eq $null) {
+                    $mode = 'iis6'
+                    $ItemProp = Get-AuxIIS6ItemProp -Line $Line -Pattern $IIS6Pattern
+                }
+                else {
+                    $mode = 'linux'
+                }
             }
+        }
+        else {
+            $ItemProp = Get-AuxIIS6ItemProp -Line $Line -Pattern $IIS6Pattern    
+        }
+
+        # Add ftp-item.
+        if ($ItemProp -ne $null) {
+
+            $FileInfo = [System.IO.FileInfo]$ItemProp.Name
+            $ItemProp.BaseName = $FileInfo.BaseName
+            $ItemProp.Extension = $FileInfo.Extension
+            $ItemProp.Parent = ([string]$Path).Replace('\', '/')
+            $ItemProp.Path = ([string](Add-FtpUrlPath -Url $Path -SubUrl $ItemProp.Name)).Replace('\', '/')
+            $ItemProp.FullName = ([string](Join-FtpUrlPaths -Paths $Conn.RootPath, $Path, $ItemProp.Name)).Replace('\', '/')
+
+            $Item = New-Object PSCustomObject -Property $ItemProp
             $FtpItems += $Item
         }
+
+        # Next line
         $Line = $Stream.ReadLine()
     }
 
@@ -335,3 +340,79 @@ function Add-FtpUrlPath($Url, $SubUrl) {
     }
     $Result
 }
+
+# AUXILIUARY
+
+function Get-AuxLinuxItemProp($Line, $Pattern) {
+    $ItemProp = $null
+    if ($Line -match $Pattern) {
+        $ItemProp = @{
+            Dir = ($Matches.dir -eq 'd');
+            Right = $Matches.right;
+            Link = [int]$Matches.link;
+            User = $Matches.usr;
+            Group = $Matches.grp;
+            Size = [long]$Matches.size;
+            Month = $Matches.month;
+            Day = [int]$Matches.day;
+            Year = 0;
+            Time = $Matches.time;
+            Name = $Matches.name;
+        }
+    }
+    $ItemProp
+}
+
+function Get-AuxIIS6ItemProp($Line, $Pattern) {
+    $ItemProp = $null
+    if ($Line -match $Pattern) {
+        $ItemProp = @{
+            Dir = ($Matches.dir_size -eq '<DIR>');
+            Right = '';
+            Link = 0;
+            User = '';
+            Group = '';
+            Size = 0;
+            Month = [int]$Matches.month;
+            Day = [int]$Matches.day;
+            Year = [int]$Matches.year
+            Time = $Matches.hh + ':' + $Matches.min + $Matches.ampm;
+            Name = $Matches.Name;
+        }
+        if (-not $ItemProp.Dir) {
+            $ItemProp.Size = [long]$Matches.dir_size
+        }
+    }
+    $ItemProp
+}
+
+function Get-AuxLinuxPattern() {
+    # drw-rw-rw- 1 ftp ftp            0 Jun 10 10:16 directoryname
+    # -rw-rw-rw- 1 ftp ftp     32866304 Sep 28 23:00 filename
+    $Pattern = @()
+    $Pattern += '(?<dir>[-d])(?<right>[-rwx]{9})'
+    $Pattern += '(?<link>\d+)'
+    $Pattern += '(?<usr>\S+)'
+    $Pattern += '(?<grp>\S+)'
+    $Pattern += '(?<size>\d+)'
+    $Pattern += '(?<month>\w+)'
+    $Pattern += '(?<day>\d+)'
+    $Pattern += '(?<time>\d{1,2}:\d{2})'
+    $Pattern += '(?<name>.+)'
+    $Pattern = '^' + [String]::Join('\s+', $Pattern) + '$'
+    $Pattern
+}
+
+function Get-AuxII6Pattern() {
+    # 01-29-20 11:37PM <DIR> foldername
+    # 01-30-20 12:07AM 7612766 Order monitor.7z
+    $Pattern = @()
+    $Pattern += '(?<month>\d{2})-(?<day>\d{2})-(?<year>\d{2})'
+    $Pattern += '(?<hh>\d{2}):(?<min>\d{2})(?<ampm>[AP]M)'
+    $Pattern += '(?<dir_size>\S+)'
+    $Pattern += '(?<name>.+)'
+    $Pattern = '^' + [String]::Join('\s+', $Pattern) + '$'
+    $Pattern
+}
+
+Export-ModuleMember -Function '*-Ftp*'
