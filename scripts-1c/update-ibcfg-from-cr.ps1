@@ -54,28 +54,46 @@ $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 $IsTerminatedSessions = $false
 if ($TerminateDesigner) {
     $DesignerStartedBefore = (Get-date).AddHours(-$DisgnerOpenHours);
-    $Result = Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
-    if ($Result.TerminatedSessions.Count -gt 0) {
-        $IsTerminatedSessions = $true
+
+    try {
+        $Result = Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
+        if ($Result.TerminatedSessions.Count -gt 0) {
+            $IsTerminatedSessions = $true
+        }
     }
+    catch {
+        $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $ErrorInfo | Out-Null
+        break
+    }
+
 }
 if ($IsTerminatedSessions) {
     Start-Sleep -Seconds 30
 }
 
-# Get conf from CR updating DB.
-$IsRequiredUpdate = $false
-$Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-if (Test-1CCfChanged -Conn $Conn) {
-    if ($UseDynamicUpdate) {
-        Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
-        if (Test-1CCfChanged -Conn $Conn) {
+try {
+
+    # Get conf from CR updating DB.
+    $IsRequiredUpdate = $false
+    $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
+    if (Test-1CCfChanged -Conn $Conn) {
+        if ($UseDynamicUpdate) {
+            Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
+            if (Test-1CCfChanged -Conn $Conn) {
+                $IsRequiredUpdate = $True
+            }
+        }
+        else {
             $IsRequiredUpdate = $True
         }
     }
-    else {
-        $IsRequiredUpdate = $True
-    }
+
+}
+catch {
+    $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $Result.out
+    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $ErrorInfo | Out-Null
+    break
 }
 
 if (-not $IsRequiredUpdate) {
