@@ -23,4 +23,4 @@ else {
     'ERROR' | Out-Host
 }
 
-Start-Sleep -Seconds 1
+Start-Sleep -Seconds 5

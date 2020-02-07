@@ -1,3 +1,4 @@
 {
-	"hostDescr": "My local host (RDV-KAA)"
+	"hostDescr": "My local host (RDV-KAA)",
+	"V8": "8.3.15.1656"
 }

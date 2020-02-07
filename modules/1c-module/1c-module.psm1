@@ -1494,14 +1494,73 @@ function Get-1CCRLockingObject([string]$Metadata) {
 # 1C-Administration
 ####
 
-function Test-1CConfigurationChanged($Conn) {
+function Test-1CCfChanged($Conn) {
     $ComConn = Get-1CComConnection -Conn $Conn
     $IsChanged = Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'ConfigurationChanged'
     Remove-Variable -Name 'ComConn'
     $IsChanged
 }
 
-function Remove-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $Log) {
+function Remove-1CIBConnections() {
+    param (
+        $Conn,
+        [ValidateSet('1CV8', '1CV8C', 'Designer', 'COMConsole', 'SrvrConsole', 'BackgroundJob', 'COMConnection', 'WebClient', 'WSConnection')]
+        $Application,
+        $ConnectedBefore,
+        $Log
+    )
+    
+    $ProcessName = 'TeminateConnections'
+    
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'Start'
+    $ConnectionsInfo = Get-1CIBConnections -Conn $Conn
+
+    $TerminatedConnections = @()
+    foreach ($Connection in $ConnectionsInfo.Connections) {
+
+        # Filter by AppID (1CV8, 1CV8C, Designer, COMConsole, SrvrConsole, ...)
+        if ($Application -ne $null -and $Connection.Application -notin $Application) {continue}
+        if ($ConnectedBefore -ne $null -and $Connection.ConnectedAt -ge $ConnectedBefore) {continue}
+        if ($Connection.Application -like 'SrvrConsole') {continue}
+        
+        $ConnectionsInfo.WPConnection.Disconnect($Connection)
+        $ConnectionDescr = [ordered]@{
+            ConnID = $Connection.ConnID;
+            Application = $Connection.Application;
+            Host = $Connection.Host;
+            ConnectedAt = $Connection.ConnectedAt;
+            SessionID = $Connection.SessionID;
+            Process = $Connection.Process;
+        }
+        $TerminatedConnections += $Connection;
+        $ConnectionDescr = Get-1CArgs -TArgs $ConnectionDescr -ArgEnter '' -ValueSep '=' -ArgSep ' '
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Done' -LogText ('Connection ' + $ConnectionDescr)
+    }    
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'End'
+}
+
+function Get-1CIBConnections($Conn) {
+    $IBInfo = Get-1CIBInfo -Conn $Conn
+    $Connections = $IBInfo.WPConnection.GetInfoBaseConnections($IBInfo.InfoBase)
+    @{
+        Agent = $IBInfoShort.Agent;
+        Cluster = $IBInfoShort.Cluster;
+        InfoBase = $IBInfoShort.InfoBase;
+        WPConnection = $IBInfo.WPConnection;
+        WorkingProcess = $IBInfo.WorkingProcess;
+        Connections = $Connections;
+    }
+}
+
+function Remove-1CIBSessions() {
+    param (
+        $Conn,
+        [string]$TermMsg,
+        [ValidateSet('1CV8', '1CV8C', 'Designer', 'COMConsole', 'SrvrConsole', 'BackgroundJob', 'COMConnection', 'WebClient', 'WSConnection')]
+        $AppID,
+        $StartedBefore,
+        $Log
+    )
     $ProcessName = 'TeminateSessions'
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogText ('Start "' + $TermMsg + '"')
     $SessionsInfo = Get-1CIBSessions -Conn $Conn
@@ -1513,54 +1572,33 @@ function Remove-1CIBSessions($Conn, [string]$TermMsg, $AppID, $StartedBefore, $L
         # Filter by AppID (1CV8, 1CV8C, Designer, COMConsole, SrvrConsole, ...)
         if ($AppID -ne $null -and $Session.AppID -notin $AppID) {continue}
         if ($StartedBefore -ne $null -and $Session.StartedAt -ge $StartedBefore) {continue}
+        if ($Session.AppID -like 'SrvrConsole') {continue}
         
-        if ($Session.AppID -ne 'SrvrConsole') {
-            $Agent.TerminateSession($SessionsInfo.Cluster, $Session, $TermMsg)
-            $SessionDescr = [ordered]@{
-                ID = $Session.SessionID;
-                User = $Session.UserName;
-                AppID = $Session.AppID;
-                Host = $Session.Host;
-                Started = $Session.StartedAt;
-                cpuCurr = $Session.cpuTimeCurrent;
-                cpu5min = $Session.cpuTimeLast5Min;
-            }
-            $TerminatedSessions += $Session;
-            $SessionDescr = Get-1CArgs -TArgs $SessionDescr -ArgEnter '' -ValueSep '=' -ArgSep ' '
-            Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Done' -LogText ('Session ' + $SessionDescr)
-
+        $Agent.TerminateSession($SessionsInfo.Cluster, $Session, $TermMsg)
+        $SessionDescr = [ordered]@{
+            ID = $Session.SessionID;
+            User = $Session.UserName;
+            AppID = $Session.AppID;
+            Host = $Session.Host;
+            Started = $Session.StartedAt;
+            cpuCurr = $Session.cpuTimeCurrent;
+            cpu5min = $Session.cpuTimeLast5Min;
         }
+        $TerminatedSessions += $Session;
+        $SessionDescr = Get-1CArgs -TArgs $SessionDescr -ArgEnter '' -ValueSep '=' -ArgSep ' '
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Done' -LogText ('Session ' + $SessionDescr)
+
     }    
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'End'
-    @{TerminatedSessions = $TerminatedSessions}
- }
+}
 
 function Get-1CIBSessions($Conn) {
-
-    $ClusterInfo = Get-1CCluster -Conn $Conn -Auth
-    
-    $Agent = $ClusterInfo.Agent
-    $Cluster = $ClusterInfo.Cluster
-    
-    $InfoBases = $Agent.GetInfoBases($Cluster)
-
-    $FindedInfoBase = $null
-
-    foreach ($InfoBase in $InfoBases) {
-        if ($Conn.Ref -isnot [string]) {continue}
-        [string]$InfoBaseName = $InfoBase.Name
-        if ($InfoBaseName.ToUpper() -eq $Conn.Ref.ToUpper()) {
-            $FindedInfoBase = $InfoBase;
-            break
-        }
-    }
-
-    $Sessions = $Agent.GetInfoBaseSessions($Cluster, $FindedInfoBase)
-
+    $IBInfoShort = Get-1CIBInfo -Conn $Conn -ShortInfo
+    $Sessions = $IBInfoShort.Agent.GetInfoBaseSessions($IBInfoShort.Cluster, $IBInfoShort.InfoBase)
     @{
-        Agent = $Agent;
-        Cluster = $Cluster;
-        InfoBase = $FindedInfoBase;
+        Agent = $IBInfoShort.Agent;
+        Cluster = $IBInfoShort.Cluster;
+        InfoBase = $IBInfoShort.InfoBase;
         Sessions = $Sessions;
     }
 }
@@ -1590,38 +1628,57 @@ function Set-1CIBSessionsDenied($Conn, [switch]$Denied, $From, $To, [string]$Msg
     $IBInfo
 }
 
-function Get-1CIBInfo($Conn) {
+function Get-1CIBInfo($Conn, [switch]$ShortInfo) {
+
+    if ($ShortInfo) {
+
+        $ClusterInfo = Get-1CCluster -Conn $Conn -Auth
+  
+        $Agent = $ClusterInfo.Agent
+        $Cluster = $ClusterInfo.Cluster
+        $InfoBases = $Agent.GetInfoBases($Cluster)
+
+        $WPConnection = $null
+        $WorkingProcess = $null
+
+    }
+    else {
     
-    $WPInfo = Get-1CWorkingProcessConnection -Conn $Conn -Auth
+        $WPInfo = Get-1CWPConnection -Conn $Conn -Auth
 
-    $WPConnection = $WPInfo.WPConnection
-    if ($Conn.Usr -ne $null -and $Conn.Usr -ne '') {
-        $WPConnection.AddAuthentication($Conn.Usr, $Conn.Pwd)
-    } 
+        $WPConnection = $WPInfo.WPConnection
+        if ($Conn.Usr -ne $null -and $Conn.Usr -ne '') {
+            $WPConnection.AddAuthentication($Conn.Usr, $Conn.Pwd)
+        } 
 
-    $InfoBases = $WPConnection.GetInfoBases()
+        $Agent = $WPInfo.Agent;
+        $Cluster = $WPInfo.Cluster;
+        $WorkingProcess = $WPInfo.WorkingProcess;
+        $InfoBases = $WPConnection.GetInfoBases()
+
+    }
 
     $FindedInfoBase = $null
-
-    foreach ($InfoBase in $InfoBases) {
-        if ($Conn.Ref -isnot [string]) {continue}
-        [string]$InfoBaseName = $InfoBase.Name
-        if ($InfoBaseName.ToUpper() -eq $Conn.Ref.ToUpper()) {
-            $FindedInfoBase = $InfoBase;
-            break
+    
+    if (-not [string]::IsNullOrEmpty($Conn.Ref)) {
+        foreach ($InfoBase in $InfoBases) {
+            if ($InfoBase.Name -like $Conn.Ref) {
+                $FindedInfoBase = $InfoBase;
+                break
+            }
         }
     }
    
     @{
-        Agent = $WPInfo.Agent;
-        Cluster = $WPInfo.Cluster;
-        WorkingProcess = $WPInfo.WorkingProcess;
-        WPConnection = $WPConnection;
+        Agent = $Agent;
+        Cluster = $Cluster;
         InfoBase = $FindedInfoBase;
+        WorkingProcess = $WorkingProcess;
+        WPConnection = $WPConnection;
     }
 }
 
-function Get-1CWorkingProcessConnection($Conn, $WorkingProcess, [switch]$Auth) {
+function Get-1CWPConnection($Conn, $WorkingProcess, [switch]$Auth) {
 
     $ClusterInfo = Get-1CCluster -Conn $Conn -Auth:$Auth   
     if ($ClusterInfo -eq $null -or $ClusterInfo.Cluster -eq $null) {
@@ -1756,11 +1813,19 @@ function Test-1CClusterSrvrString($Cluster, [string]$Srvr) {
 function Get-1CAgent($Conn, [switch]$Auth) {
     $ComConnector = Get-1CComConnector -V8 $Conn.V8
     $AgentConnStr = $Conn.AgSrvr;
-    if ($AgentConnStr -eq '' -or $AgentConnStr -eq $null) {
+    if ([string]::IsNullOrEmpty($AgentConnStr)) {
         $SubstrSrvr = $Conn.Srvr.Split(':')
-        $AgentConnStr = $SubstrSrvr[0]
+        $AgentSrv = $SubstrSrvr[0]
+        $ClusterMngrPort = $SubstrSrvr[1]
+        if ([string]::IsNullOrEmpty($ClusterMngrPort)) {
+            $AgentConnStr = $AgentSrv
+        }
+        else {
+            $AgentPort = ([int]$ClusterMngrPort - 1)
+            $AgentConnStr = $AgentSrv + ':' + $AgentPort.ToString()
+        }
     }
-    if ($AgentConnStr -eq '' -or $AgentConnStr -eq $null) {
+    if ([string]::IsNullOrEmpty($AgentConnStr)) {
         $AgentConnStr = 'localhost';
     }
     $AgentConn = $ComConnector.ConnectAgent($AgentConnStr)

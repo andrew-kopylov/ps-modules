@@ -15,7 +15,8 @@
     $TerminateDesigner = $true,
     $DesignerOpenHours = 0,
     $SlackHookUrl = '',
-    $SlackHookUrlAlerts = ''
+    $SlackHookUrlAlerts = '',
+    $AttemptsOnFailureCount = 3
 )
 
 Import-Module 1c-module -Force
@@ -45,7 +46,7 @@ if ([string]::IsNullOrEmpty($AgentSrvr)) {
 }
 
 # Default values
-$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr
+$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd
 
 $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 
@@ -53,7 +54,7 @@ $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 $IsTerminatedSessions = $false
 if ($TerminateDesigner) {
     $DesignerStartedBefore = (Get-date).AddHours(-$DisgnerOpenHours);
-    $Result = Stop-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
+    $Result = Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
     if ($Result.TerminatedSessions.Count -gt 0) {
         $IsTerminatedSessions = $true
     }
@@ -65,10 +66,10 @@ if ($IsTerminatedSessions) {
 # Get conf from CR updating DB.
 $IsRequiredUpdate = $false
 $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-if (Test-1CConfigurationChanged -Conn $Conn) {
+if (Test-1CCfChanged -Conn $Conn) {
     if ($UseDynamicUpdate) {
         Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
-        if (Test-1CConfigurationChanged -Conn $Conn) {
+        if (Test-1CCfChanged -Conn $Conn) {
             $IsRequiredUpdate = $True
         }
     }
@@ -90,10 +91,11 @@ $PermissionCode = 'CfgUpdate-' + (Get-Date).ToString('HHmmss')
 # Block IB for updating
 $BlockFrom = (Get-Date).AddMinutes($BlockDelayMinutes)
 $BlockTo = ($BlockFrom).AddMinutes($BlockPeriodMinutes)
-$UpdatePeriodInfo = ' с ' + $BlockFrom.ToString('HH:mm') + ' в течении ' + $BlockPeriodMinutes + ' минут.'
+#$UpdatePeriodInfo = ' в ' + $BlockFrom.ToString('HH:mm') + ' в течении ' + $BlockPeriodMinutes + ' минут.'
+$UpdatePeriodInfo = ' в ' + $BlockFrom.ToString('HH:mm') + ' в течении 1-3 минут.'
 $BlockMsg = 'Обновление базы ' + $UpdatePeriodInfo
 Add-1CLog -Log $Log -ProcessName '1CInfoBaseSessions' -LogHead 'Block' -LogText $BlockMsg
-Set-1CIBSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode
+Set-1CIBSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode | Out-Null
 
 if ($UseSlackInfo) {
     $UpdateStage = $BaseDescr + ' Установлена блокировка базы ' + $UpdatePeriodInfo
@@ -112,11 +114,58 @@ if ($UseSlackInfo) {
 
 # Terminate sessions and update IB
 $Conn.UC = $PermissionCode
-Stop-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
-Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
-Set-1CIBSessionsDenied -Conn $Conn
+Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
+Remove-1CIBConnections -Conn $Conn -Log $Log
 
-if ($UseSlackInfo) {
-    $UpdateStage = $BaseDescr + ' Обновление завершено';
-    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+$Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+
+$IsFailure = -not $Result.OK -or (Test-1CCFChanged -Conn $Conn);
+
+$AttemtsCounter = 1
+
+$WaitSecOnFailure = 0
+if ($AttemptsOnFailureCount -gt 0) {
+    $WaitSecOnFailure = [int]($BlockPeriodMinutes * 60 / $AttemptsOnFailureCount)
+}
+
+While ($IsFailure) {
+
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' ОШИБКА обновления ИБ: ' + $Result.out
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
+    
+    $AttemtsCounter++        
+    if ($AttemtsCounter -gt $AttemptsOnFailureCount) {
+        break
+    }
+
+    Start-Sleep -Seconds $WaitSecOnFailure
+
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' Запуск обновления конфигурации базы данных... Попытка ' + $AttemtsCounter + ' из ' + $AttemptsOnFailureCount 
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
+
+    Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
+    Remove-1CIBConnections -Conn $Conn -Log $Log
+
+    $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+    $IsFailure = -not $Result.OK -or (Test-1CCfChanged -Conn $Conn);
+
+}
+
+Set-1CIBSessionsDenied -Conn $Conn | Out-Null
+
+if (-not $IsFailure) {
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' Обновление успешно завершено';
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
+} 
+else {
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' ОШИБКА!!! Обновление НЕ выполнено по причине: ' + $Result.out;
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
 }
