@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.4'
+    '1.4.5'
 }
 
 function Update-1CModule ($Log) {
