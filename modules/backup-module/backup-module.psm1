@@ -1,5 +1,5 @@
 ﻿
-# backup-module: 1.0
+# backup-module: 1.1
 
 $FtpPostfix = '-up2ftp'
 
@@ -79,7 +79,7 @@ function Send-BakToFtp($BakPolicy, $LocalPath, $FtpConn, $FtpPath, [switch]$Recu
     $CheckedFtpPaths = @()
 
     $BakFiles = Get-AuxBakFilesWithDate -BakPolicy $BakPolicy -Path $LocalPath -FtpConn $null -Recurse:$Recurse
-    $BakFiles = $BakFiles.Where({-not $_.Item.BaseName.EndsWith($FtpPostfix)})
+    $BakFiles = ([PSCustomObject[]]$BakFiles).Where({-not $_.Item.BaseName.EndsWith($FtpPostfix)})
 
     foreach ($BakFileLine in $BakFiles) {
 
@@ -133,7 +133,7 @@ function Remove-BakFiles($BakPolicy, $Path, [switch]$Recurse, $FtpConn, $Log, [s
     $FilesWithDate = Get-AuxBakFilesWithDate -BakPolicy $BakPolicy -Path $BakPath -Recurse:$Recurse -FtpConn $FtpConn
 
     if (($FtpConn -eq $null) -and $OnlyUploadedToFtp) {
-        $FilesWithDate = $FilesWithDate.Where({$_.Item.BaseName.EndsWith($FtpPostfix)})
+        $FilesWithDate = ([PSCustomObject[]]$FilesWithDate).Where({$_.Item.BaseName.EndsWith($FtpPostfix)})
     }
 
     Out-Log -Log $Log -Label $LogLabel -Text 'Get backup files to remove...'
@@ -189,7 +189,7 @@ function Get-AuxBakFilesWithDate($BakPolicy, $Path, [switch]$Recurse, $FtpConn) 
 
     if ($FtpConn -ne $null) {
         $FtpItems = Get-FtpChildItem -Conn $FtpConn -Path $BakPath -Recurse:$Recurse;
-        $BakFiles = $FtpItems.Where({$_.Name -Like ($Prefix + '*' + $Postfix)})
+        $BakFiles = ([PSCustomObject[]]$FtpItems).Where({$_.Name -Like ($Prefix + '*' + $Postfix)})
     }
     else {
         $BakFiles = Get-ChildItem -Path $Path -File -Filter ($Prefix + '*' + $Postfix) -Recurse:$Recurse
