@@ -48,7 +48,7 @@ function Out-Log($Log, $Label, $Text, $OutHost, [switch]$InvokeThrow) {
     $OutLogText | Out-File -FilePath $LogFile -Append
 
     # Errors log
-    if ($Lable -like '*error*') {
+    if ($Label -like '*error*') {
         $LogErrorFile = Add-AuxLogPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '_Errors.log')
         $OutLogText | Out-File -FilePath $LogErrorFile -Append    
     }
