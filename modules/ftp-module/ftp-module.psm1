@@ -1,5 +1,5 @@
 ﻿
-# ftp-module: 1.1
+# ftp-module: 1.2
 
 # EXPORT
 
@@ -25,11 +25,11 @@ function Rename-FtpFile($Conn, $Path, $NewName) {
 function Send-FtpFile($Conn, $Path, $LocalPath) {
 
     if (-not (Test-Path -Path $LocalPath)) {
-        throw ('Local file ' + $LocalPath + ' not exists')
+        return $false
     }
 
     $File = Get-Item -Path $LocalPath
-    if ([String]::IsNullOrEmpty($Path)) {
+    if ([String]::IsNullOrEmpty($Path) -or ($Path -eq '/')) {
         $Path = $File.Name
     }
     else {
@@ -46,23 +46,31 @@ function Send-FtpFile($Conn, $Path, $LocalPath) {
 	$File = [IO.File]::OpenRead((Convert-Path $LocalPath) )
 	$Response = $Request.GetRequestStream()
     if (-not $Response.CanWrite) {
-        throw 'Can''t write to ftp'
+        return $false
     }
     [Byte[]]$Buffer = New-Object Byte[] $Conn.BufferSize
 						
 	$ReadedData = 0
 	$AllReadedData = 0
 	$TotalData = (Get-Item $LocalPath).Length
-												
-	do {
-        $ReadedData = $File.Read($Buffer, 0, $Buffer.Length)
-        $Response.Write($Buffer, 0, $ReadedData);
-    } while($ReadedData -gt 0)
-			
-	$File.Close()
 
     $OK = $false
-    if ($Response -ne $null) {
+		
+	do {
+        $ReadedData = $File.Read($Buffer, 0, $Buffer.Length)
+        try {
+            $Response.Write($Buffer, 0, $ReadedData)
+        }
+        catch {
+            Write-Error -Message $_
+            break
+        }
+        $AllReadedData += $ReadedData   
+
+    } while($ReadedData -gt 0)
+    $File.Close()
+			
+    if (($Response -ne $null) -and ($AllReadedData -eq $TotalData)) {
         $Response.Close()
         $Response.Dispose()
         $OK = $true
@@ -182,9 +190,11 @@ function Get-FtpItem($Conn, $Path) {
     $SplitUrl = Split-FtpUrl -Url $Path
     $SubPath = $SplitUrl.Parent
     $Child = $SplitUrl.Child
+    if ([string]::IsNullOrEmpty($Child)) {
+        return $null
+    }
 
     $Item = Get-FtpChildItem -Conn $Conn -Path $SubPath | Where-Object -FilterScript {$_.Name -Like $Child}
-  
     if ($Item -ne $null -and $Item.Name -like $Child) {
         return $Item
     }
@@ -199,6 +209,9 @@ function Get-FtpChildItem($Conn, $Path, [switch]$Recurse) {
     $Request = Get-FtpRequest -Conn $Conn -Path $Path -Method ([System.Net.WebRequestMethods+Ftp]::ListDirectoryDetails)
 
     $Response = [System.Net.FtpWebResponse]$request.GetResponse()
+    if ($Response -eq $null) {
+        return $null
+    }
     $Stream = New-Object System.IO.StreamReader($Response.GetResponseStream(), [System.Text.Encoding]::Default)
 
     $mode = '' # linux/iis6
