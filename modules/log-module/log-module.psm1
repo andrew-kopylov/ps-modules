@@ -1,5 +1,5 @@
 
-# log-module: version 1.0
+# log-module: version 1.1
 
 # EXPORT
 
@@ -45,8 +45,13 @@ function Out-Log($Log, $Label, $Text, $OutHost, [switch]$InvokeThrow) {
 
     $LogFile = Add-AuxLogPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '.log')
     $OutLogText = Get-AuxLogText -Label $Label -Text $Text
-
     $OutLogText | Out-File -FilePath $LogFile -Append
+
+    # Errors log
+    if ($Lable -like '*error*') {
+        $LogErrorFile = Add-AuxLogPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '_Errors.log')
+        $OutLogText | Out-File -FilePath $LogErrorFile -Append    
+    }
 
     if ($OutHost -or (($OutHost -ne $false) -and $Log.OutHost) -or (($OutHost -eq $null) -and ($Log.OutHost -eq $null))) {
         $OutLogText | Out-Host
