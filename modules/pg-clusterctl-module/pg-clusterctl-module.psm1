@@ -308,9 +308,9 @@ function Backup-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
     $BackupName = $ClusterItem.Code + '-cluster-' + (Get-Date).ToString('yyyyMMdd-HHmmss')
     $BackupPath = Add-PgPath -Path $BackupDir -AddPath $BackupName
 
-    $Conn = Get-PgConn -Port $ClusterItem.Port
-
     Test-PgDir -Path $BackupPath -CreateIfNotExist | Out-Null
+
+    $Conn = Get-AuxPgConn -ClusterItem $ClusterItem -PSArgs $PSArgs
     $Result = Invoke-PgBasebackup -Conn $Conn -BackupPath $BackupPath -Format tar -XLogMethod fetch 
     if (-not $Result.OK) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text $Result.Error -InvokeThrow
@@ -334,7 +334,7 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Bases'
 
-    Out-Log -Log $Log -Label $LogLabel, Cluster-Start -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
+    Out-Log -Log $Log -Label $LogLabel, Cluster -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
 
     if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
@@ -367,6 +367,8 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
         $BackupName = $BaseItem.Name + '_' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.backup'
         $BackupFile = Add-PgPath -Path $BackupBaseDir -AddPath $BackupName
+
+        $Conn = Get-AuxPgConn -ClusterItem $ClusterItem -PSArgs $PSArgs
         $Result = Invoke-PgDumpSimple -Conn $Conn -DbName $BaseItem.Name -File $BackupFile
 
         if ($Result.OK) {
@@ -377,7 +379,7 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
         }
     }
   
-    Out-Log -Log $Log -Label $LogLabel, Cluster-End
+    Out-Log -Log $Log -Label $LogLabel, Cluster -Text 'End'
 }
 
 function Remove-AuxClusterFullBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) {
@@ -512,10 +514,9 @@ function Get-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
         return
     }
 
-    $Conn = Get-PgConn -Port $ClusterItem.Port
-
     $Bases = @()
     
+    $Conn = Get-AuxPgConn -ClusterItem $ClusterItem -PSArgs $PSArgs
     $Databases = Get-PgDatabases -Conn $Conn
     foreach ($BaseItem in $Databases) {
 
@@ -532,6 +533,10 @@ function Get-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
     }
 
     $Bases
+}
+
+function Get-AuxPgConn($ClusterItem, $PSArgs) {
+    Get-PgConn -Port $ClusterItem.Port
 }
 
 function Test-AuxCluster($Cluster, $PSArgs) {
