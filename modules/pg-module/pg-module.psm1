@@ -1,5 +1,5 @@
 ﻿
-# pg-module: version 2.3
+# pg-module: version 2.4
 
 function Get-PgConn {
     param (
@@ -618,28 +618,6 @@ function Get-PgPathParent($Path) {
 function Get-PgPathBaseName($Path) {
     $Info = [System.IO.DirectoryInfo]::new($Path)
     $Info.BaseName
-}
-
-function Get-PgPSArgs($ArgsArray) {
-
-    # Reutrn Hashtable of arguments readed from $Args (array)
-
-    $HArgs = @{}
-
-    $ArgName = ''
-    $PatternName = '^-(?<name>\w+)'
-
-    foreach ($ArgValue in $ArgsArray) {
-        if ($ArgValue -match $PatternName) {
-            $ArgName = $Matches.name
-        }
-        elseif (-not [String]::IsNullOrEmpty($ArgName)) {
-            $HArgs[$ArgName] = $ArgValue
-            $ArgName = ''
-        }
-    }
-
-    $HArgs
 }
 
 function Get-PgArgs($ArgList, $ArgStr = '', $ArgSep = ' ', $ArgEnter = '-', $ValueSep = ' ') {

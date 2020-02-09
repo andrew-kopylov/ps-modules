@@ -1,7 +1,7 @@
 
 Import-Module pg-clusterctl-module -Force
 
-$PSArgs = Get-PgPSArgs -ArgsArray $args
+$PSArgs = Get-PgcPSArgs -ArgsArray $args
 $Config = Get-Content -Path ($PSScriptRoot + '\config\config.json') | ConvertFrom-Json
 $Clusters = Get-Content -Path ($PSScriptRoot + '\config\clusters.json') | ConvertFrom-Json 
 $Log = New-Log -ScriptPath $PSCommandPath
@@ -52,6 +52,97 @@ elseif ($args[0] -like 'init-clusters') {
     Initialize-PgcClusters -Config $Config -Clusters $Clusters -Log $Log -PSArgs $PSArgs -Ftp $FtpConn
 
 }
+elseif ($args[0] -like 'get-config') {
+
+    $Config | Out-Host
+
+}
+elseif ($args[0] -like 'get-clusters') {
+
+    $Clusters | Out-Host
+
+}
+elseif ($args[0] -like 'get-bases') {
+    
+    $Log.Name = 'Get-Bases'
+    $Bases = Get-PgcBases -Config $Config -Clusters $Clusters -Log $Log -PSArgs $PSArgs
+    $Bases | Out-Host
+
+}
+elseif ($args[0] -like 'help') {
+
+$helptext = '
+NAME:
+    
+    pg-control\ctl - control PostgreSQL cluster.
+
+SYNAPSIS:
+
+    .\ctl command [options]
+
+COMMANDS:
+    
+    - backup-bases [-c clustercode] [-b basename] - backup all bases, or
+        only cluster with parameter -c, or only base with parameter -b.
+
+    - backup-clusters [-c clustercode] - backup all custers, or 
+        only cluster with parameter -c.
+    
+    - remove-backups [-c clustercode] - remove all outdated backups local and stored (ftp, ...), or
+        only cluster with parameter -c.
+        Before remove local files they are storing (ftp, ...).
+        Local backups remove if they are stored (ftp, ...).
+
+    - init-clusters [-c clustercode] - initialize new clusters from clusters-config-file:
+        invoke initdb, create cluster *.conf files, create and run service.
+        If cluster is initialized before, it is skipped.
+    
+    - send-wal2ftp [-c clustercode] - send archived WAL files to ftp storage.
+    
+    - backup-wal -p %p - used in "archive_command" postgresql.conf parameter.
+
+    - get-config - return list of config parameters.
+
+    - get-clusters - return list of clusters in clusters-config-file.
+
+    - get-bases [-c clustercode] [-b basename] [-IncludePostgresBase [$true|$false]] [-IncludeTemplateBases [$true|$false]] [-ExcludeTestBases [$true|$false]]
+        return list of cluster bases.
+        IncludePostgresBase, IncludeTemplateBases, ExcludeTestBases - default off.
+
+EXAMPLES:
+    
+    Set current directory to ...\pg-cluster
+    
+        cd c:\scripts\pg-cluster
+    
+    Backup base postgres from all clusters
+    
+        .\ctl backup-bases -b postgres
+    
+    Backup all bases from cluster with code "mycltr"
+        
+        .\ctl backup-bases -c mycltr
+
+    Backup base "mybase" from cluster with code "mycltr"
+        
+        .\ctl backup-bases -c mycltr -b mybase
+
+USED MODULES:
+    - pg-clusterctl-module
+    - pg-module
+    - backup-module
+    - log-module
+    - ftp-module
+'
+
+    $helptext | Out-Host
+
+}
 else {
-    Out-Log -Log $Log -Label Error -Text ('Error command: "' + $args[0] + '"') -InvokeThrow
+
+    $Msg = 'Bad command: "' + $args[0] + '". Use "help" command.'
+    $Msg | Out-Host
+
+    Out-Log -Log $Log -Label Error -Text $Msg -OutHost $false
+
 }

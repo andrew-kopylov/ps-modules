@@ -3,6 +3,43 @@
 
 # PSArgs - hashtable with arguments setteld in format: "-c ClusterCode -b BaseName".
 
+function Get-PgcPSArgs($ArgsArray) {
+
+    # Reutrn Hashtable of arguments readed from $Args (array)
+
+    $HArgs = @{}
+
+    $ArgName = ''
+    $PatternName = '^-(?<name>\w+)'
+
+    foreach ($ArgValue in $ArgsArray) {
+        if ($ArgValue -match $PatternName) {
+            if (-not [string]::IsNullOrEmpty($ArgName)) {
+                $HArgs[$ArgName] = $true
+            }
+            $ArgName = $Matches.name
+        }
+        elseif (-not [String]::IsNullOrEmpty($ArgName)) {
+            if ($ArgValue -like '$true') {
+                $HArgs[$ArgName] = $true
+            }
+            elseif ($ArgValue -like '$false') {
+                $HArgs[$ArgName] = $false
+            }
+            else {
+                $HArgs[$ArgName] = $ArgValue
+            }
+            $ArgName = ''
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($ArgName)) {
+        $HArgs[$ArgName] = $true
+    }
+
+    $HArgs
+}
+
 function Initialize-PgcClusters($Config, $Clusters, $Log, $PSArgs) {
     $LogLabel = 'Init-Clusters'
     Out-Log -Log $Log -Label $LogLabel, Start
@@ -146,6 +183,20 @@ function Send-PgcWal2Ftp($Config, $Clusters, $Log, $PSArgs, $FtpConn) {
     Out-Log -Log $Log -Label $LogLabel, End
 }
 
+function Get-PgcBases($Config, $Clusters, $Log, $PSArgs) {
+
+    $AllBases = @()
+
+    foreach ($ClusterItem in $Clusters) {
+        if (-not (Test-AuxCluster -Cluster $ClusterItem -PSArgs $PSArgs)) {continue}
+        $ClusterBases = Get-AuxClusterBases -Config $Config -ClusterItem $ClusterItem -Log $Log -PSArgs $PSArgs
+        $AllBases += $ClusterBases
+    }
+
+    $AllBases
+}
+
+
 # AUXILUARY
 
 function Init-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
@@ -283,25 +334,32 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Bases'
 
+    Out-Log -Log $Log -Label $LogLabel, Cluster-Start -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
+
     if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
 
-    Out-Log -Log $Log -Label $LogLabel, Cluster-Start -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
+    if ($PSArgs.IncludePostgresBase -eq $null) {
+        $PSArgs.IncludePostgresBase = $true
+    }
+    
+    if ($PSArgs.IncludeTemplateBases -eq $null) {
+        $PSArgs.IncludeTemplateBases = $true
+    }
 
-    $Conn = Get-PgConn -Port $ClusterItem.Port
-    $DataBases = Get-PgDatabases -Conn $Conn
+    if ($PSArgs.ExcludeTestBases -eq $null) {
+        $PSArgs.ExcludeTestBases = $true
+    }
+
+    $Databases = Get-AuxClusterBases -Config $Config -ClusterItem $ClusterItem -PSArgs $PSArgs -Log $Log
 
     $BackupClusterDir = Add-PgPath -Path $Config.sharebackup -AddPath bases, $ClusterItem.Code
     Test-PgDir -Path $BackupClusterDir -CreateIfNotExist | Out-Null
 
     foreach ($BaseItem in $DataBases) {
         
-        if ($BaseItem.Name -like 'template0') {continue}
-        if ($BaseItem.Name -like '*test') {continue}
-        if (-not (Test-AuxBase -Base $BaseItem -PSArgs $PSArgs)) {continue}
-
         Out-Log -Log $Log -Label $LogLabel, Base-Start -Text $BaseItem.Name
 
         $BackupBaseDir = Add-PgPath -Path $BackupClusterDir -AddPath $BaseItem.Name
@@ -445,6 +503,37 @@ function Send-AuxClusterWal2Ftp($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) 
     Out-Log -Log $Log -Label $LogLabel, End
 }
 
+function Get-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
+
+    $LogLabel = 'Get-ClusterBases'
+
+    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
+        return
+    }
+
+    $Conn = Get-PgConn -Port $ClusterItem.Port
+
+    $Bases = @()
+    
+    $Databases = Get-PgDatabases -Conn $Conn
+    foreach ($BaseItem in $Databases) {
+
+        $BaseTest = Test-AuxBase -Base $BaseItem -PSArgs $PSArgs
+        if (-not $BaseTest) {continue}
+
+        $ClusterBase = @{
+            oid = $BaseItem.oid;
+            name = $BaseItem.name;
+            cluster = $ClusterItem.code;
+        }
+
+        $Bases += New-Object PSCustomObject -Property $ClusterBase
+    }
+
+    $Bases
+}
+
 function Test-AuxCluster($Cluster, $PSArgs) {
     $Test = $true
     if ($PSArgs -ne $null) {
@@ -463,19 +552,39 @@ function Test-AuxCluster($Cluster, $PSArgs) {
 }
 
 function Test-AuxBase($Base, $PSArgs) {
+
     $Test = $true
+
+    $BaseName = ''
+    if ($Base -is [string]) {
+        $BaseName = $Base
+    }
+    else {
+        $BaseName = $Base.Name
+    }
+
+    if (-not $PSArgs.IncludePostgresBase) {
+        if ($BaseName -like 'postgres') {$Test = $false}
+    }
+
+    if (-not $PSArgs.IncludeTemplate0Base) {
+        if ($BaseName -like 'template0') {$Test = $false}
+    }
+
+    if (-not $PSArgs.IncludeTemplateBases) {
+        if ($BaseName -like 'template*') {$Test = $false}
+    }
+
+    if ($BSArgs.ExcludeTestBases) {
+        if ($BaseName -like '*test') {$Test = $false}
+    }
+
     if ($PSArgs -ne $null) {
         if (-not [string]::IsNullOrEmpty($PSArgs.b)) {
-            $BaseName = ''
-            if ($Base -is [string]) {
-                $BaseName = $Base
-            }
-            else {
-                $BaseName = $Base.Name
-            }
             $Test = ($BaseName -like $PSArgs.b)
         }       
     }
+
     $Test
 }
 

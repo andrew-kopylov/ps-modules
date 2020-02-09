@@ -49,11 +49,11 @@ function Out-Log($Log, $Label, $Text, $OutHost, [switch]$InvokeThrow) {
 
     # Errors log
     if ($Label -like '*error*') {
-        $LogErrorFile = Add-AuxLogPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '_Errors.log')
+        $LogErrorFile = Add-AuxLogPath -Path $LogDir -AddPath ((Get-Date).ToString('yyyyMMdd') + '-' + $LogName + '-Errors.log')
         $OutLogText | Out-File -FilePath $LogErrorFile -Append    
     }
 
-    if ($OutHost -or (($OutHost -ne $false) -and $Log.OutHost) -or (($OutHost -eq $null) -and ($Log.OutHost -eq $null))) {
+    if (($OutHost -eq $true) -or (($OutHost -ne $false) -and ($Log.OutHost -eq $true)) -or (($OutHost -eq $null) -and ($Log.OutHost -eq $null))) {
         $OutLogText | Out-Host
     }
 
