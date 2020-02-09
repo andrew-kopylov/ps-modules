@@ -1,10 +1,22 @@
 
 Import-Module pg-clusterctl-module -Force
 
+$ConfigFile = $PSScriptRoot + '\config\config.json'
+$ClustersFile = $PSScriptRoot + '\config\clusters.json'
+
 $PSArgs = Get-PgcPSArgs -ArgsArray $args
-$Config = Get-Content -Path ($PSScriptRoot + '\config\config.json') | ConvertFrom-Json
-$Clusters = Get-Content -Path ($PSScriptRoot + '\config\clusters.json') | ConvertFrom-Json 
+$Config = Get-Content -Path $ConfigFile | ConvertFrom-Json
+$Clusters = Get-Content -Path $ClustersFile | ConvertFrom-Json 
 $Log = New-Log -ScriptPath $PSCommandPath
+
+if ($PSArgs.RunAsAdministrator) {
+    $WinUsr = [System.Security.Principal.WindowsPrincipal]([System.Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $Winusr.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        $ArgsString = [string]::Join(' ', $args)
+        Start-Process -FilePath 'powershell' -ArgumentList ('-f "' + $PSCommandPath + '" ' + $ArgsString) -Verb RunAs
+        break
+    }
+}
 
 if ($args[0] -like 'backup-wal') {
 
@@ -69,6 +81,19 @@ elseif ($args[0] -like 'get-bases') {
     $Bases | Out-Host
 
 }
+elseif ($args[0] -like 'add-cluster') {
+    
+    $Log.Name = 'Add-Cluster'
+
+    $NewClusters = Add-PgcCluster -Config $Config -Clusters $Clusters -Log $Log -PSArgs $PSArgs
+    if ($NewClusters -ne $null) {
+        $NewClusters | ConvertTo-Json | Out-File -FilePath $ClustersFile
+        if ($PSArgs.InitCluster) {
+            Initialize-PgcClusters -Config $Config -Clusters $NewClusters -Log $Log -PSArgs $PSArgs
+        }
+    }
+
+}
 elseif ($args[0] -like 'help') {
 
 $helptext = '
@@ -93,9 +118,14 @@ COMMANDS:
         Before remove local files they are storing (ftp, ...).
         Local backups remove if they are stored (ftp, ...).
 
+    - add-cluster -c clustercode -p clusterport -pwd appUsrPasword [-InitCluster [$true|$false]] -
+        add cluster description in clusters-conifg-file.
+        InitClsuter flag invoke clusterInitialization (see init-clusters command), need admin privileges.
+
     - init-clusters [-c clustercode] - initialize new clusters from clusters-config-file:
         invoke initdb, create cluster *.conf files, create and run service.
         If cluster is initialized before, it is skipped.
+        Need admin privileges.
     
     - send-wal2ftp [-c clustercode] - send archived WAL files to ftp storage.
     
@@ -108,6 +138,11 @@ COMMANDS:
     - get-bases [-c clustercode] [-b basename] [-IncludePostgresBase [$true|$false]] [-IncludeTemplateBases [$true|$false]] [-ExcludeTestBases [$true|$false]]
         return list of cluster bases.
         IncludePostgresBase, IncludeTemplateBases, ExcludeTestBases - default off.
+
+OPTIONS:
+
+    - RunAsAdministrator - start process with administrator privileges.
+
 
 EXAMPLES:
     
@@ -133,6 +168,7 @@ USED MODULES:
     - backup-module
     - log-module
     - ftp-module
+    - 7z-module
 '
 
     $helptext | Out-Host

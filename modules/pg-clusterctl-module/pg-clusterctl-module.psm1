@@ -40,7 +40,46 @@ function Get-PgcPSArgs($ArgsArray) {
     $HArgs
 }
 
+function Add-PgcCluster($Config, $Clusters, $Log, $PSArgs) {
+
+    $LogLabel = 'Add-Cluster'
+
+    $code = $PSArgs.c
+    $port = $PSArgs.p
+    $pass = $PSArgs.pwd
+
+    $ReturnClusters = $null
+        
+    if ([string]::IsNullOrEmpty($code) -or [string]::IsNullOrEmpty($port) -or [string]::IsNullOrEmpty($pass)) {
+        $Msg = 'Mandatory parameters: -c <cluseter code> -p <cluster port> -pwd <app usr password>'
+        Out-Log -Log $Log -Label $LogLabel, Error -Text $Msg
+    }
+    elseif (([PSCustomObject[]]$Clusters).Where({$_.code -like $code}).Count -gt 0) {
+        $Msg = 'Cluster with code "' + $code + '" already exists.'
+        Out-Log -Log $Log -Label $LogLabel, Error -Text $Msg        
+    }
+    elseif (([PSCustomObject[]]$Clusters).Where({$_.port -eq $port}).Count -gt 0) {
+        $Msg = 'Cluster with port "' + $port + '" already exists.'
+        Out-Log -Log $Log -Label $LogLabel, Error -Text $Msg
+    }
+    else {
+        $ReturnClusters = @()
+        $ReturnClusters += $Clusters
+        $ReturnClusters += New-Object PSCustomObject -Property @{code = $code; port = $port; appUsrPwd = $pass}
+        Out-Log -Log $Log -Text ('Added cluster code "' + $PSArgs.c + '" port "' + $PSArgs.p + '"')
+    }
+    
+    $ReturnClusters
+}
+
 function Initialize-PgcClusters($Config, $Clusters, $Log, $PSArgs) {
+
+    $WinUsr = [System.Security.Principal.WindowsPrincipal]([System.Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $Winusr.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Out-Log -Log $Log -Label $LogLabel, Error -Text 'Init-cluster needs administrator privileges.'
+        break
+    }
+
     $LogLabel = 'Init-Clusters'
     Out-Log -Log $Log -Label $LogLabel, Start
     foreach ($ClusterItem in $Clusters) {
@@ -196,7 +235,6 @@ function Get-PgcBases($Config, $Clusters, $Log, $PSArgs) {
     $AllBases
 }
 
-
 # AUXILUARY
 
 function Init-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
@@ -295,7 +333,7 @@ function Backup-AuxCluster($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Backup-Cluster'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -336,7 +374,7 @@ function Backup-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
     Out-Log -Log $Log -Label $LogLabel, Cluster -Text ('code ' + $ClusterItem.Code + ', port ' + $ClusterItem.Port)
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -386,7 +424,7 @@ function Remove-AuxClusterFullBackups($Config, $ClusterItem, $Log, $PSArgs, $Ftp
 
     $LogLabel = 'Remove-ClusterFullBackups'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -418,7 +456,7 @@ function Remove-AuxClusterWalBackups($Config, $ClusterItem, $Log, $PSArgs, $FtpC
 
     $LogLabel = 'Remove-ClusterWALBackups'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -449,7 +487,7 @@ function Remove-AuxClusterBaseBackups($Config, $ClusterItem, $Log, $PSArgs, $Ftp
 
     $LogLabel = 'Remove-ClusterBaseBackups'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -487,7 +525,7 @@ function Send-AuxClusterWal2Ftp($Config, $ClusterItem, $Log, $PSArgs, $FtpConn) 
 
     $LogLabel = 'Send-ClusterWAL2FTP'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -509,7 +547,7 @@ function Get-AuxClusterBases($Config, $ClusterItem, $Log, $PSArgs) {
 
     $LogLabel = 'Get-ClusterBases'
 
-    if (-not(Test-AuxClusterExists -Config $Config -Cluster $ClusterItem)) {
+    if (-not(Test-AuxClusterDataExists -Config $Config -Cluster $ClusterItem)) {
         Out-Log -Log $Log -Label $LogLabel, Error -Text ('Cluster not initialized: code ' + $ClusterItem.code)
         return
     }
@@ -593,7 +631,7 @@ function Test-AuxBase($Base, $PSArgs) {
     $Test
 }
 
-function Test-AuxClusterExists($Config, $Cluster) {
+function Test-AuxClusterDataExists($Config, $Cluster) {
     $DefaultConf = Add-PgPath -Path $Config.shareData -AddPath $ClusterItem.code, postgresql.conf
     Test-Path -Path $DefaultConf
 }
