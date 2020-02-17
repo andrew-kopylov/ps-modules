@@ -1,4 +1,4 @@
-﻿Import-Module C:\scripts\modules\1c-module.ps1 -Force
+﻿Import-Module 1c-module -Force
 
 # Current Powershell command file
 $PSCmdFile = Get-Item -Path $PSCommandPath
@@ -6,7 +6,7 @@ $ProcessName = $PSCmdFile.BaseName
 
 #Config
 $ConfigDir = $PSCmdFile.DirectoryName + '\config'
-$Config = Get-Content -Path ($ConfigDir + '\conf.json') | ConvertFrom-Json 
+$Config = Get-Content -Path ($ConfigDir + '\config.json') | ConvertFrom-Json 
 $ConfigUpdater = Get-Content -Path ($ConfigDir + '\updater.json') | ConvertFrom-Json
 
 $ReleaseNo = '-'
@@ -73,7 +73,7 @@ Invoke-1CCRReportTXT -Conn $Conn -ReportFile $RepFile -NBegin ($LastCRVersion + 
 
 $IssuePattern = $IssuePrefix + '-\d+'
 
-$RepData = Parce-1CCRReportFromMXL -TXTFile $RepFile
+$RepData = ConvertFrom-1CCRReport -TXTFile $RepFile -FileType ConvertedFromMXL
 if ($RepData -eq $null) {
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'ParceCRReport' -LogText ('Error: data is null')
     break
