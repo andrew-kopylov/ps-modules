@@ -1,4 +1,12 @@
 {
 	"hostDescr": "My local host (RDV-KAA)",
-	"V8": "8.3.15.1656"
+	"V8": "8.3.15.1656",
+	"srvr": "rdv-kaa:4541",
+	"updaterUsr": "",
+	"updaterPwd": "",
+	"crPath": "D:\\work\\bases\\cr-update-ib-from-cr",
+	"crUsr": "prod",
+	"crPwd": "",
+	"slackHookUrl": "https://hooks.slack.com/services/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",
+	"slackHookUrlAlerts": ""
 }
