@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.5'
+    '1.4.6'
 }
 
 function Update-1CModule ($Log) {
@@ -344,6 +344,24 @@ function Invoke-1CCheckModules {
     Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckModules' -ProcessArgs $ProcessArgs -Log $Log
 }
 
+####
+# ENTERPRIZE
+####
+
+function Invoke-1CExecute($Conn, $ExternalProcessor, $Timeout, $Log) {
+
+    $ProcessCommand = 'Execute'
+    $ProcessArgs = Add-RoundSign -Str $ExternalProcessor -RoundSign '"'
+    
+    $Result = Invoke-1CProcess -Mode ENTERPRISE -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Timeout $Timeout -Log $Log
+    
+    if ($Result.OK -ne 1) {
+        $Msg = 'Ошибка выполнения внешней обработки.';
+        Add-1CLog -Log $Log -ProcessName $ProcessCommand -LogHead "End.Error" -LogText $Msg -Result $Result
+    };
+
+    $Result;
+}
 
 ####
 # COMMON CONFIGURATION COMMANDS
@@ -1994,6 +2012,7 @@ function Invoke-1CProcess {
         $ProcessCommand,
         $ProcessArgs,
         $ProcessName,
+        [int]$Timeout,
         $Log
     )
 
@@ -2048,21 +2067,51 @@ function Invoke-1CProcess {
     $ArgList = Get-1CArgs -TArgs @{DumpResult = $Dump; Out = $Out} -ArgsStr $ArgList -RoundValueSign '"'
 
     $File1Cv8 = Get-1CV8Exe -V8 $Conn.V8
+
+    $Wait = ($Timeout -le 0)
+    $Begin = Get-Date
     
-    $Process = Start-Process -FilePath $File1cv8 -ArgumentList $ArgList -NoNewWindow -Wait -PassThru
+    $Process = Start-Process -FilePath $File1cv8 -ArgumentList $ArgList -NoNewWindow -Wait:$Wait -PassThru
+
+    $TimeoutExceeded = $false
+
+    if ($Wait) {
+        $End = Get-Date
+    }
+    else {
+        $BorderDate = $Begin.AddSeconds($Timeout)
+        While (-not $Process.HasExited) {
+            if ((Get-Date) -gt $BorderDate) {
+                $Process.Kill()
+                $TimeoutExceeded = $true
+                break
+            }
+            Start-Sleep -Seconds 1
+        }
+        $End = Get-Date
+    }
+
     if ($Process.ExitCode -ne 0) {
         $Msg = 'Exit code ' + $Process.ExitCode
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText $Msg
     }
 
-    $DumpValue = Get-Content -Path $Dump -Raw
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'DumpResult' -LogText $DumpValue
+    if (-not $TimeoutExceeded) {
 
-    $OutValue = Get-Content -Path $Out -Raw
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Out' -LogText $OutValue
+        $DumpValue = Get-Content -Path $Dump -Raw
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'DumpResult' -LogText $DumpValue
+
+        $OutValue = Get-Content -Path $Out -Raw
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Out' -LogText $OutValue
     
-    Remove-1CResultDump -Log $Log -DumpFile $Dump
-    Remove-1CResultDump -Log $Log -DumpFile $Out
+        Remove-1CResultDump -Log $Log -DumpFile $Dump
+        Remove-1CResultDump -Log $Log -DumpFile $Out
+
+    }
+    else {
+        $DumpValue = '1'
+        $OutValue = 'Timeout exceeded'
+    }
 
     $Result = Get-1CProcessResult -Dump $DumpValue -Out $OutValue -OK 1;
     if ($Result.Dump -ne '0') {$Result.OK = 0}

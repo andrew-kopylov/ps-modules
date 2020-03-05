@@ -16,7 +16,9 @@
     $DesignerOpenHours = 0,
     $SlackHookUrl = '',
     $SlackHookUrlAlerts = '',
-    $AttemptsOnFailureCount = 3
+    $AttemptsOnFailureCount = 3,
+    $ExternalProcessor = '',
+    $ExecuteTimeout = 0
 )
 
 Import-Module 1c-module -Force
@@ -24,10 +26,13 @@ Import-Module 1c-module -Force
 $PSCmdFile = Get-Item -Path $PSCommandPath
 
 # Use Slack
-$UseSlackInfo = (-not [String]::IsNullOrWhiteSpace($SlackHookUrl))
-$UseSlackAlets = (-not [String]::IsNullOrWhiteSpace($SlackHookUrlAlerts))
-if ($UseSlackInfo -or $UseSlackAlets) {
+$UseSlackInfo = (-not [String]::IsNullOrWhiteSpace($SlackHookUrl)) -or (-not [String]::IsNullOrWhiteSpace($SlackHookUrlAlerts))
+if ($UseSlackInfo) {
     Import-Module slack-module -Force
+}
+
+if ($UseSlackInfo -and [String]::IsNullOrWhiteSpace($SlackHookUrlAlerts)) {
+    $SlackHookUrlAlerts = $SlackHookUrl
 }
 
 if ($UseSlackInfo) {
@@ -40,13 +45,8 @@ $Log = Get-1CLog -Dir ($PSScriptRoot + '\logs') -Name $PSCmdFile.BaseName
 
 $UpdateBeginDate = Get-Date
 
-# 1C-agent adress
-if ([string]::IsNullOrEmpty($AgentSrvr)) {
-    $AgentSrvr = $Srvr
-}
-
 # Default values
-$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd
+$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr
 
 $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 
@@ -63,36 +63,25 @@ if ($TerminateDesigner) {
     }
     catch {
         $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_
-        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $ErrorInfo | Out-Null
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
         break
     }
-
 }
 if ($IsTerminatedSessions) {
     Start-Sleep -Seconds 30
 }
 
 try {
-
     # Get conf from CR updating DB.
     $IsRequiredUpdate = $false
     $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
     if (Test-1CCfChanged -Conn $Conn) {
-        if ($UseDynamicUpdate) {
-            Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
-            if (Test-1CCfChanged -Conn $Conn) {
-                $IsRequiredUpdate = $True
-            }
-        }
-        else {
-            $IsRequiredUpdate = $True
-        }
+        $IsRequiredUpdate = $True
     }
-
 }
 catch {
     $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $Result.out
-    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $ErrorInfo | Out-Null
+    Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
     break
 }
 
@@ -102,6 +91,22 @@ if (-not $IsRequiredUpdate) {
         Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
     }
     break
+}
+
+if ($UseDynamicUpdate) {
+    $UpdateStage = $BaseDescr + ' Запуск динамического обновления конфигурации базы данных...'
+    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
+    if (Test-1CCfChanged -Conn $Conn) {
+        $UpdateStage = $BaseDescr + ' Ошибка динамического обновления.'
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
+        $IsRequiredUpdate = $True
+    }
+    else {
+        $UpdateStage = $BaseDescr + ' Динамическое обновление успешно завершено.'
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        break
+    }
 }
 
 $PermissionCode = 'CfgUpdate-' + (Get-Date).ToString('HHmmss')
@@ -150,7 +155,7 @@ While ($IsFailure) {
 
     if ($UseSlackInfo) {
         $UpdateStage = $BaseDescr + ' ОШИБКА обновления ИБ: ' + $Result.out
-        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
     }
     
     $AttemtsCounter++        
@@ -173,6 +178,19 @@ While ($IsFailure) {
 
 }
 
+if ((-not $IsFailure) -and (-not [string]::IsNullOrEmpty($ExternalProcessor))) {
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' Выполнение внешней обработки после обновления: ' + $ExternalProcessor;
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
+    $Result = Invoke-1CExecute -Conn $Conn -ExternalProcessor $ExternalProcessor -Timeout $ExecuteTimeout -Log $Log
+    $IsFailure = (-not $Result.OK)
+    if ($UseSlackInfo -and $IsFailure) {
+        $UpdateStage = $BaseDescr + ' Ошибка выполнения обработки данных после обновления конфигурации: ' + $Result.Out;
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
+    }
+}
+
 Set-1CIBSessionsDenied -Conn $Conn | Out-Null
 
 if (-not $IsFailure) {
@@ -183,7 +201,7 @@ if (-not $IsFailure) {
 } 
 else {
     if ($UseSlackInfo) {
-        $UpdateStage = $BaseDescr + ' ОШИБКА!!! Обновление НЕ выполнено по причине: ' + $Result.out;
-        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        $UpdateStage = $BaseDescr + ' ОШИБКА!!! Обновление НЕ выполнено по причине: ' + $Result.out + ' ' + $Result.msg;
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
     }
 }
