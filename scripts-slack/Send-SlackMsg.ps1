@@ -1,4 +1,4 @@
-﻿Import-Module ($PSScriptRoot + '/modules/slack-module.ps1') -Force
+﻿Import-Module slack-module -Force
 
 $ScriptItem = $PSCommandPath | Get-Item 
 
