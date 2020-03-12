@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.6'
+    '1.4.7'
 }
 
 function Update-1CModule ($Log) {
@@ -2039,6 +2039,10 @@ function Invoke-1CProcess {
     $ArgList = Add-String -Str $ArgList -Add $ConnStr -Sep ' '
     $ArgList = Add-String -Str $ArgList -Add $ProcessCommand -Sep ' /'
     $ArgList = Add-String -Str $ArgList -Add $ProcessArgs -Sep ' '
+
+    if (-not [string]::IsNullOrEmpty($Conn.Extension)) {
+        $ArgList = Add-String -Str $ArgList -Add ('-Extension ' + $Conn.Extension) -Sep ' '
+    }
 
     if ([String]::IsNullOrEmpty($ProcessName)) {
         $ProcessName = $ProcessCommand

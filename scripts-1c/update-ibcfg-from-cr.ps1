@@ -6,8 +6,10 @@
     $Usr,
     $Pwd = '',
     $CRPath,
+    $CRPathExt,
     $CRUsr,
     $CRPwd = '',
+    $Extension,
     $AgentSrvr,
     $UseDynamicUpdate = $false,
     $BlockDelayMinutes = 15,
@@ -45,8 +47,10 @@ $Log = Get-1CLog -Dir ($PSScriptRoot + '\logs') -Name $PSCmdFile.BaseName
 
 $UpdateBeginDate = Get-Date
 
-# Default values
+# Connextions parameters
 $Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr
+$ConnExt = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPathExt -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr -Extension $Extension
+
 
 $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
 
@@ -72,10 +76,41 @@ if ($IsTerminatedSessions) {
 }
 
 try {
+    
     # Get conf from CR updating DB.
     $IsRequiredUpdate = $false
+    
+    # Update from config CR
+    if ($UseSlackInfo) {
+        $UpdateStage = $BaseDescr + ' Получение изменений основной конфигурации из хранилища'
+        Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    }
     $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-    if (Test-1CCfChanged -Conn $Conn) {
+    if ($Result.ProcessedObjects) {
+        if ($UseSlackInfo) {
+            $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $Result.ProcessedObjects.Count
+            Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        }
+        $IsRequiredUpdate = $True
+    }
+
+    # Update extension from CR
+    if (-not [string]::IsNullOrEmpty($Extension)) {
+        if ($UseSlackInfo) {
+            $UpdateStage = $BaseDescr + ' Получение изменений расширения конфигурации "' + $Extension + '" из хранилища'
+            Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        }
+        $ResultExt = Invoke-1CCRUpdateCfg -Conn $ConnExt -Log $Log
+        if ($ResultExt.ProcessedObjects) {
+            if ($UseSlackInfo) {
+                $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $ResultExt.ProcessedObjects.Count
+                Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+            }
+            $IsRequiredUpdate = $True
+        }
+    }
+
+    if (-not $IsRequiredUpdate -and (Test-1CCfChanged -Conn $Conn)) {
         $IsRequiredUpdate = $True
     }
 }
@@ -135,14 +170,18 @@ if ($UseSlackInfo) {
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
 }
 
-# Terminate sessions and update IB
 $Conn.UC = $PermissionCode
+$ConnExt.UC = $PermissionCode
+
+# Terminate sessions and update IB
 Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
 Remove-1CIBConnections -Conn $Conn -Log $Log
 
 $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
-
-$IsFailure = -not $Result.OK -or (Test-1CCFChanged -Conn $Conn);
+if (-not [string]::IsNullOrEmpty($Extension)) {
+    $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
+}
+$IsFailure = (-not $Result.OK) -or (-not $ResultExt.OK) -or (Test-1CCFChanged -Conn $Conn);
 
 $AttemtsCounter = 1
 
@@ -155,6 +194,9 @@ While ($IsFailure) {
 
     if ($UseSlackInfo) {
         $UpdateStage = $BaseDescr + ' ОШИБКА обновления ИБ: ' + $Result.out
+        if (-not [string]::IsNullOrEmpty($Extension)) {
+            $UpdateStage = $UpdateStage + ", ext " + $ResultExt.out
+        }
         Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
     }
     
@@ -174,7 +216,10 @@ While ($IsFailure) {
     Remove-1CIBConnections -Conn $Conn -Log $Log
 
     $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
-    $IsFailure = -not $Result.OK -or (Test-1CCfChanged -Conn $Conn);
+    if (-not [string]::IsNullOrEmpty($Extension)) {
+        $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
+    }
+    $IsFailure = (-not $Result.OK) -or (-not $ResultExt.OK) -or (Test-1CCFChanged -Conn $Conn);
 
 }
 

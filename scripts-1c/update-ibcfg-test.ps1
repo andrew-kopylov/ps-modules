@@ -10,9 +10,11 @@ D:\git\ps-modules\scripts-1c\update-ibcfg-from-cr.ps1 `
 -V8 $Config.V8 `
 -Srvr $Config.Srvr `
 -Ref git-test-update-ib `
+-Extension UpdateIBFromCRExt `
 -Usr $Config.updaterUsr `
 -Pwd $Config.updaterPwd `
 -CRPath $Config.crPath `
+-CRPathExt $Config.crPathExt `
 -CRUsr $Config.crUsr `
 -CRPwd $Config.crPwd `
 -UseDynamicUpdate $false `
@@ -21,6 +23,4 @@ D:\git\ps-modules\scripts-1c\update-ibcfg-from-cr.ps1 `
 -TerminateDesigner $true `
 -SlackHookUrl $Config.slackHookUrl `
 -SlackHookUrlAlerts $Config.slackHookUrlAlerts `
--DesignerOpenHours 2 `
--ExternalProcessor D:\ВнешняяОбработка1.epf `
--ExecuteTimeout 10
+-DesignerOpenHours 2
