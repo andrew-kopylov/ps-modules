@@ -20,7 +20,9 @@
     $SlackHookUrlAlerts = '',
     $AttemptsOnFailureCount = 3,
     $ExternalProcessor = '',
-    $ExecuteTimeout = 0
+    $ExecuteTimeout = 0,
+    $AgClUsr,
+    $AgClPwd
 )
 
 Import-Module 1c-module -Force
@@ -48,8 +50,8 @@ $Log = Get-1CLog -Dir ($PSScriptRoot + '\logs') -Name $PSCmdFile.BaseName
 $UpdateBeginDate = Get-Date
 
 # Connextions parameters
-$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr
-$ConnExt = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPathExt -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr -Extension $Extension
+$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr -AgUsr $AgClUsr -AgPwd $AgClPwd -ClUsr $AgClUsr -ClPwd $AgClPwd
+$ConnExt = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPathExt -CRUsr $CRUsr -CRPwd $CRPwd -AgSrvr $AgentSrvr -Extension $Extension -AgUsr $AgClUsr -AgPwd $AgClPwd -ClUsr $AgClUsr -ClPwd $AgClPwd
 
 
 $ScriptMsg = $BaseDescr + ' Обновление конфигурации ИБ'
@@ -131,9 +133,9 @@ if (-not $IsRequiredUpdate) {
 if ($UseDynamicUpdate) {
     $UpdateStage = $BaseDescr + ' Запуск динамического обновления конфигурации базы данных...'
     Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
-    Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
-    if (Test-1CCfChanged -Conn $Conn) {
-        $UpdateStage = $BaseDescr + ' Ошибка динамического обновления.'
+    $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
+    if ((-not $Result.OK) -or (Test-1CCfChanged -Conn $Conn)) {
+        $UpdateStage = $BaseDescr + ' Ошибка динамического обновления. ' + $Result.Out
         Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $UpdateStage | Out-Null
         $IsRequiredUpdate = $True
     }
@@ -178,6 +180,7 @@ Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
 Remove-1CIBConnections -Conn $Conn -Log $Log
 
 $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+$ResultExt = @{OK = 1}
 if (-not [string]::IsNullOrEmpty($Extension)) {
     $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
 }
@@ -216,6 +219,7 @@ While ($IsFailure) {
     Remove-1CIBConnections -Conn $Conn -Log $Log
 
     $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+    $ResultExt = @{OK = 1}
     if (-not [string]::IsNullOrEmpty($Extension)) {
         $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
     }
