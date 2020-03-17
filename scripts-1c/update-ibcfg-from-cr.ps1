@@ -88,12 +88,19 @@ try {
         Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
     }
     $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-    if ($Result.ProcessedObjects) {
-        if ($UseSlackInfo) {
-            $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $Result.ProcessedObjects.Count
-            Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+    if ($Result.OK) {
+        if ($Result.ProcessedObjects) {
+            if ($UseSlackInfo) {
+                $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $Result.ProcessedObjects.Count
+                Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+            }
+            $IsRequiredUpdate = $True
         }
-        $IsRequiredUpdate = $True
+    }
+    else {
+        $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $Result.out
+        Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
+        break
     }
 
     # Update extension from CR
@@ -103,12 +110,19 @@ try {
             Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
         }
         $ResultExt = Invoke-1CCRUpdateCfg -Conn $ConnExt -Log $Log
-        if ($ResultExt.ProcessedObjects) {
-            if ($UseSlackInfo) {
-                $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $ResultExt.ProcessedObjects.Count
-                Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+        if ($ResultExt.OK) {
+            if ($ResultExt.ProcessedObjects) {
+                if ($UseSlackInfo) {
+                    $UpdateStage = $BaseDescr + ' Изменено объектов: ' + $ResultExt.ProcessedObjects.Count
+                    Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
+                }
+                $IsRequiredUpdate = $True
             }
-            $IsRequiredUpdate = $True
+        }
+        else {
+            $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $ResultExt.out
+            Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
+            break
         }
     }
 
