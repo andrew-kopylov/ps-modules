@@ -100,7 +100,7 @@ try {
     else {
         $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $Result.out
         Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
-        break
+        return
     }
 
     # Update extension from CR
@@ -122,7 +122,7 @@ try {
         else {
             $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $ResultExt.out
             Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
-            break
+            return
         }
     }
 
@@ -133,7 +133,7 @@ try {
 catch {
     $ErrorInfo = $BaseDescr + ' ОШИБКА обновления базы: ' + $_ + '; ' + $Result.out
     Send-SlackWebHook -HookUrl $SlackHookUrlAlerts -Text $ErrorInfo | Out-Null
-    break
+    return
 }
 
 if (-not $IsRequiredUpdate) {
@@ -141,7 +141,7 @@ if (-not $IsRequiredUpdate) {
         $UpdateStage = $BaseDescr + ' Не требуется обновление конфигурации информационной базы'
         Send-SlackWebHook -HookUrl $SlackHookUrl -Text $UpdateStage | Out-Null
     }
-    break
+    return
 }
 
 if ($UseDynamicUpdate) {

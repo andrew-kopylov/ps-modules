@@ -5,7 +5,7 @@ function Send-SlackWebHook {
         $Text
     )
 
-    if ([string]::IsNullOrEmpty($HookUrl)) {break}
+    if ([string]::IsNullOrEmpty($HookUrl)) {return}
 
     $Body = @{
         text = $Text
