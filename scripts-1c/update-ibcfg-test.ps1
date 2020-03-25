@@ -23,4 +23,6 @@ D:\git\ps-modules\scripts-1c\update-ibcfg-from-cr.ps1 `
 -TerminateDesigner $true `
 -SlackHookUrl $Config.slackHookUrl `
 -SlackHookUrlAlerts $Config.slackHookUrlAlerts `
--DesignerOpenHours 2
+-DesignerOpenHours 2 `
+-ExternalProcessor D:\git\ps-modules\scripts-1c\ExternalUpdater.epf `
+-ExecuteTimeout 20
