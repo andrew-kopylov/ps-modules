@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.7'
+    '1.4.8'
 }
 
 function Update-1CModule ($Log) {
@@ -205,9 +205,15 @@ function Get-1CConn {
         $ClSrvr,
         $ClUsr,
         $ClPwd,
-        [switch]$Visible
+        $Visible,
+        $DisableStartupMessages,
+        $DisableStartupDialogs,
+        $Local,
+        $VLocal,
+        $Conn
     )
-    @{
+    
+    $NewConn = @{
         V8 = $V8;
         File = $File;
         Srvr = $Srvr;
@@ -220,13 +226,33 @@ function Get-1CConn {
         Extension = $Extension;
         UC = $UC;
         AgSrvr = $AgSrvr;
-        AgUsr = [string]$AgUsr;
-        AgPwd = [string]$AgPwd;
+        AgUsr = $AgUsr;
+        AgPwd = $AgPwd;
         ClSrvr = $ClSrvr;
-        ClUsr = [string]$ClUsr;
-        ClPwd = [string]$ClPwd;
-        Visible = $Visible
+        ClUsr = $ClUsr;
+        ClPwd = $ClPwd;
+        Visible = $Visible;
+        DisableStartupMessages = $DisableStartupMessages;
+        DisableStartupDialogs = $DisableStartupDialogs;
+        Local = $Local;
+        VLocal = $VLocal;
     }
+
+    if ($Conn -ne $null) {
+        $UnionConn = @{}
+        foreach ($Key in $Conn.Keys) {
+            if ($NewConn.$Key -eq $null) {
+                $NewConn.$Key = $Conn.$Key
+            }
+        }
+    }
+
+    $NewConn.AgUsr = [string]$NewConn.AgUsr;
+    $NewConn.AgPwd = [string]$NewConn.AgPwd;
+    $NewConn.ClUsr = [string]$NewConn.ClUsr;
+    $NewConn.ClPwd = [string]$NewConn.ClPwd;
+
+    return $NewConn
 }
 
 # Log parameters.
@@ -2056,6 +2082,12 @@ function Invoke-1CProcess {
     if (-not [String]::IsNullOrEmpty($Conn.CRPath)) {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.ConfRep' -LogText $Conn.CRPath
     }
+
+    # Startup messages and dialogs
+    $ArgList = Get-1CArgs -TArgs @{L = $Conn.Local; VL = $Conn.VLocal} -ArgsStr $ArgList
+
+    # Startup messages and dialogs
+    $ArgList = Get-1CArgs -TArgs @{DisableStartupMessages = $Conn.DisableStartupMessages; DisableStartupDialogs = $Conn.DisableStartupDialogs} -ArgsStr $ArgList
 
     $DumpDir = Get-1CLogDumpDir -Log $Log
     #$DumpGuid = (New-Guid).ToString();
