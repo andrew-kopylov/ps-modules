@@ -210,6 +210,7 @@ function Get-1CConn {
         $DisableStartupDialogs,
         $Local,
         $VLocal,
+        $Timeout,
         $Conn
     )
     
@@ -236,6 +237,7 @@ function Get-1CConn {
         DisableStartupDialogs = $DisableStartupDialogs;
         Local = $Local;
         VLocal = $VLocal;
+        Timeout = $Timeout;
     }
 
     if ($Conn -ne $null) {
@@ -337,7 +339,7 @@ function Invoke-1CCheckConfig {
         UnsupportedFunctional = $UnsupportedFunctional;
         AllExtensions = $AllExtensions
     }
-    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckConfig' -ProcessArgs $ProcessArgs -Log $Log
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckConfig' -ProcessArgs $ProcessArgs -Log $Log -NoCrConn
 }
 
 function Invoke-1CCheckModules {
@@ -367,7 +369,7 @@ function Invoke-1CCheckModules {
         ExtendedModulesCheck = $ExtendedModulesCheck;
         AllExtensions = $AllExtensions
     }
-    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckModules' -ProcessArgs $ProcessArgs -Log $Log
+    Invoke-1CProcess -Conn $Conn -ProcessCommand 'CheckModules' -ProcessArgs $ProcessArgs -Log $Log -NoCrConn
 }
 
 ####
@@ -379,7 +381,7 @@ function Invoke-1CExecute($Conn, $ExternalProcessor, $Timeout, $Log) {
     $ProcessCommand = 'Execute'
     $ProcessArgs = Add-RoundSign -Str $ExternalProcessor -RoundSign '"'
     
-    $Result = Invoke-1CProcess -Mode ENTERPRISE -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Timeout $Timeout -Log $Log
+    $Result = Invoke-1CProcess -Mode ENTERPRISE -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Timeout $Timeout -Log $Log -NoCrConn
     
     if ($Result.OK -ne 1) {
         $Msg = 'Ошибка выполнения внешней обработки.';
@@ -431,8 +433,8 @@ function Invoke-1CUpdateDBCfg() {
     $ProcessArgs = $ProcessARgs.Replace('-BackgroundFinish none', '-BackgroundFinish')
     $ProcessArgs = $ProcessARgs.Replace('-Server v', '-Server -v')
     $ProcessArgs = $ProcessARgs.Replace('-Server none', '-Server')
-    
-    $Result = Invoke-1CProcess -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Log $Log
+
+    $Result = Invoke-1CProcess -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Log $Log -NoCrConn
     
     if ($Result.OK -ne 1) {
         $Msg = 'Ошибка обновление конфигурации базы данных.';
@@ -560,7 +562,7 @@ function Invoke-1CMergeCfg {
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
-    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log -NoCrConn
 
     $Result;
 }
@@ -575,7 +577,7 @@ function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
-    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log -NoCrConn
     if ($Result.OK -ne 1) {
         $Msg = "Ошибка выгузки файла конфигурации.";
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "End.Error" -LogText $Msg -Result $Result
@@ -2039,6 +2041,7 @@ function Invoke-1CProcess {
         $ProcessArgs,
         $ProcessName,
         [int]$Timeout,
+        [switch]$NoCrConn,
         $Log
     )
 
@@ -2053,7 +2056,13 @@ function Invoke-1CProcess {
             Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Err' -LogText ('Не указан пользователь хранилища: ' + $Conn.CRPath) -Result $Result -OK 0
             return $Result
         }
-        $ConnStr = Get-1CConnString -Conn $Conn
+        if ($NoCrConn) {
+            $ConnNoCr = Get-1CConn -CRPath '' -Conn $Conn
+            $ConnStr = Get-1CConnString -Conn $ConnNoCr
+        }
+        else {
+            $ConnStr = Get-1CConnString -Conn $Conn
+        }
     }
 
     if (Test-1CHashTable -Object $ProcessArgs) {
@@ -2067,7 +2076,7 @@ function Invoke-1CProcess {
     $ArgList = Add-String -Str $ArgList -Add $ProcessArgs -Sep ' '
 
     if (-not [string]::IsNullOrEmpty($Conn.Extension)) {
-        $ArgList = Add-String -Str $ArgList -Add ('-Extension ' + $Conn.Extension) -Sep ' '
+        $ArgList = Add-String -Str $ArgList -Add ('-Extension "' + $Conn.Extension + '"') -Sep ' '
     }
 
     if ([String]::IsNullOrEmpty($ProcessName)) {
@@ -2081,6 +2090,10 @@ function Invoke-1CProcess {
 
     if (-not [String]::IsNullOrEmpty($Conn.CRPath)) {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.ConfRep' -LogText $Conn.CRPath
+    }
+
+    if (-not [String]::IsNullOrEmpty($Conn.Extension)) {
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.Extension' -LogText $Conn.Extension
     }
 
     # Startup messages and dialogs
@@ -2103,6 +2116,10 @@ function Invoke-1CProcess {
     $ArgList = Get-1CArgs -TArgs @{DumpResult = $Dump; Out = $Out} -ArgsStr $ArgList -RoundValueSign '"'
 
     $File1Cv8 = Get-1CV8Exe -V8 $Conn.V8
+
+    if ($Timeout -le 0) {
+        $Timeout = [int]$Conn.Timeout
+    }
 
     $Wait = ($Timeout -le 0)
     $Begin = Get-Date
@@ -2383,9 +2400,6 @@ function Get-1CCRConnString($Conn) {
         $ConnStr = $ConnStr.Replace("[Path]", $Conn.CRPath);
         $ConnStr = $ConnStr.Replace("[Usr]", $Conn.CRUsr);
         $ConnStr = $ConnStr.Replace("[Pwd]", $Conn.CRPwd);
-        if ($Conn.Extension -ne '' -and $Conn.Extension -ne $null) {
-            $ConnStr = Add-String -Str $ConnStr -Add ('-Extension ' + $Conn.Extension) -Sep ' '
-        }
     }
     $ConnStr; 
 }
