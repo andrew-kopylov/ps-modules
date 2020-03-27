@@ -51,10 +51,10 @@ $Log = Get-1CLog -Dir ($PSScriptRoot + '\logs') -Name $PSCmdFile.BaseName
 
 $UpdateBeginDate = Get-Date
 
-# Connextions parameters
-$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd `
-    -AgSrvr $AgentSrvr -AgUsr $AgClUsr -AgPwd $AgClPwd `
-    -ClUsr $AgClUsr -ClPwd $AgClPwd `
+# Conneсtion parameters
+$Conn = Get-1CConn -V8 $V8 -Srvr $Srvr  -Ref $Ref -Usr $Usr -Pwd $Pwd `
+    -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd `
+    -AgSrvr $AgentSrvr -AgUsr $AgClUsr -AgPwd $AgClPwd -ClUsr $AgClUsr -ClPwd $AgClPwd `
     -DisableStartupMessages $true -DisableStartupDialogs $true
 
 $ConnExt = Get-1CConn -CRPath $CRPathExt -Extension $Extension -Conn $Conn
