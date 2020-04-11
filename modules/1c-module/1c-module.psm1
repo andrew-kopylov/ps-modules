@@ -4,7 +4,7 @@
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.9'
+    '1.4.10'
 }
 
 function Update-1CModule ($Log) {
@@ -380,6 +380,8 @@ function Invoke-1CExecute($Conn, $ExternalProcessor, $Timeout, $Log) {
 
     $ProcessCommand = 'Execute'
     $ProcessArgs = Add-RoundSign -Str $ExternalProcessor -RoundSign '"'
+
+    Add-1CLog -Log $Log -ProcessName $ProcessCommand -LogHead 'Start.Execute' -LogText $ExternalProcessor
     
     $Result = Invoke-1CProcess -Mode ENTERPRISE -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Timeout $Timeout -Log $Log -NoCrConn
     
@@ -533,7 +535,8 @@ function Invoke-1CCompareCfg {
 }
 
 function Invoke-1CMergeCfg {
-    param {
+    param (
+        $Conn,
         $CfgFile,
         $SettingsFile,
         [ValidateSet('Enable', 'Disable')]
@@ -541,7 +544,7 @@ function Invoke-1CMergeCfg {
         [ValidateSet('IncludeObjects', 'Clear')]
         $UnresolvedRefs,
         [switch]$Force
-    }
+    )
 
     # /MergeCfg <имя cf-файла> -Settings <имя файла настроек> [-EnableSupport | -DisableSupport]
     # [-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs] [-force]
@@ -586,6 +589,66 @@ function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
     $Result;      
 }
 
+function Invoke-1CDumpCfgToFiles {
+    param (
+        $Conn,
+        $FilesDir,
+        [switch]$AllExtensions,
+        [ValidateSet('Hierarchical', 'Plain')]
+        $Format,
+        [switch]$Update,
+        [switch]$Force,
+        $GetChangesToFile,
+        $DumpInfoFileForChanges,
+        [switch]$DumpInfoOnly,
+        $ListFile,
+        $Log
+    )
+
+    #/DumpConfigToFiles <каталог выгрузки> [-Extension <имя расширения>] 
+    #[-AllExtensions] [-format] [-update][-force][-getChanges <имя файла>]
+    #[-configDumpInfoForChanges <имя файла>][-configDumpInfoOnly]
+    #[-listFile <имя файла>]
+    
+    $ProcessName = 'DumpCfgToFiles';
+    $ProcessArgs = '/DumpConfigToFiles "[FilesDir]"';
+    $ProcessArgs = $ProcessArgs.Replace('[FilesDir]', $FilesDir);
+
+    $DumpInfoFileName = 'ConfigDumpInfo.xml'
+    $DumpInfoFile = Add-1CPath -Path $FilesDir -AddPath $DumpInfoFileName
+    if ($Update) {
+        if (-not (Test-Path -Path $DumpInfoFile)) {
+            $Update = $false
+        }
+    }
+
+    $TProcessArgs = @{
+        AllExtensions = $AllExtensions;
+        format = $Format;
+        update = $Update;
+        force = $Force;
+        getChanges = $GetChangesToFile;
+        configDumpInfoForChanges = $DumpInfoFileForChanges;
+        configDumpInfoOnly = $DumpInfoOnly;
+        listFile = $ListFile;
+    }
+
+
+    $ProcessArgs = Get-1CArgs -TArgs $TProcessArgs -ArgsStr $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
+
+    Test-AddDir -Path $FilesDir
+    
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.Dir" -LogText $FilesDir
+
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log -NoCrConn
+    if ($Result.OK -ne 1) {
+        $Msg = "Ошибка выгузки конфигурации в файлы.";
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "End.Error" -LogText $Msg -Result $Result
+    };
+
+    $Result;      
+}
+
 function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
 
     $ProcessName = 'LoadCfg';
@@ -603,6 +666,46 @@ function Invoke-1CLoadCfg($Conn, $CfgFile, $Log) {
     $Result;      
 }
 
+function Invoke-1CLoadCfgFromFiles {
+    param (
+        $Conn,
+        $FilesDir,
+        [switch]$AllExtensions,
+        $FromFiles,
+        $ListFile,
+        [ValidateSet('Hierarchical', 'Plain')]
+        $Format,
+        [switch]$UpdateDumpInfo,
+        $Log
+    )
+
+    #/LoadConfigFromFiles <каталог загрузки> [-Extension <имя расширения>]
+    #[-AllExtensions][-files "<файлы>"][-listFile <файл списка>][-format <режим>] [-updateConfigDumpInfo]
+
+    $ProcessName = 'LoadCfgToFiles';
+    $ProcessArgs = '/LoadConfigFromFiles "[FilesDir]"';
+    $ProcessArgs = $ProcessArgs.Replace('[FilesDir]', $FilesDir);
+
+    $TProcessArgs = @{
+        AllExtensions = $AllExtensions;
+        files = $FromFiles;
+        listFile = $ListFile;
+        format = $Format;
+        updateConfigDumpInfo = $UpdateDumpInfo;
+    }
+
+    $ProcessArgs = Get-1CArgs -TArgs $TProcessArgs -ArgsStr $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.Dir" -LogText $FilesDir
+
+    $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
+    if (-not $Result.OK) {
+        $Msg = "Ошибка загрузки конфигурации из файлов.";
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "End.Error" -LogText $Msg -Result $Result
+    };
+
+    $Result;      
+}
 
 ####
 # CONFIGURAITON REPOSITORY COMMANDS
@@ -668,7 +771,7 @@ function Invoke-1CCRUnbindCfg {
     Invoke-1CProcess -Conn $Conn -ProcessCommand 'ConfigurationRepositoryUnbindCfg' -ProcessName 'CRUnbindCfg' -ProcessArgs $ProcessArgs -Log $Log
 }
 
-function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, $force, $Objects, [switch]$includeChildObjectsAll, $Log) {
+function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, [switch]$force, $Objects, [switch]$includeChildObjectsAll, $Log) {
 
     #/ConfigurationRepositoryUpdateCfg [-Extension <имя расширения>] [-v <номер версии хранилища>] [-revised] [-force] [-objects <имя файла со списком объектов>] 
 
@@ -2088,7 +2191,7 @@ function Invoke-1CProcess {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.Base' -LogText $Base
     }
 
-    if (-not [String]::IsNullOrEmpty($Conn.CRPath)) {
+    if ((-not [String]::IsNullOrEmpty($Conn.CRPath)) -and (-not $NoCrConn)) {
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Start.ConfRep' -LogText $Conn.CRPath
     }
 
