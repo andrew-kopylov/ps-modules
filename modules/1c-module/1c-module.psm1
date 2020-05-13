@@ -388,9 +388,9 @@ function Invoke-1CExecute($Conn, $ExternalProcessor, $Timeout, $Log) {
     if ($Result.OK -ne 1) {
         $Msg = 'Ошибка выполнения внешней обработки.';
         Add-1CLog -Log $Log -ProcessName $ProcessCommand -LogHead "End.Error" -LogText $Msg -Result $Result
-    };
+    }
 
-    $Result;
+    $Result
 }
 
 ####
@@ -2248,7 +2248,7 @@ function Invoke-1CProcess {
     }
 
     if ($Process.ExitCode -ne 0) {
-        $Msg = 'Exit code ' + $Process.ExitCode
+        $Msg = 'Exit code ' + $Process.ExitCode.ToString()
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText $Msg
     }
 

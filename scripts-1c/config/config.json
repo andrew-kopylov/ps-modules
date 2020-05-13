@@ -4,9 +4,13 @@
 	"srvr": "rdv-kaa:4541",
 	"updaterUsr": "",
 	"updaterPwd": "",
+	"extension": "",
 	"crPath": "D:\\work\\bases\\cr-update-ib-from-cr",
+	"crPathExt": "D:\\work\\bases\\cr-update-ib-from-cr-ext",
 	"crUsr": "prod",
 	"crPwd": "",
-	"slackHookUrl": "https://hooks.slack.com/services/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",
-	"slackHookUrlAlerts": ""
+	"slackInfoHookUrl": "",
+	"slackHookUrl": "https://hooks.slack.com/services/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",
+	"slackHookUrlAlerts": "",
+	"jiraIssuePrefix": "AK"
 }
