@@ -1,5 +1,6 @@
-﻿
-# pg-module: version 2.4
+﻿Import-Module common-module
+
+# Version 2.5
 
 function Get-PgConn {
     param (
@@ -79,7 +80,7 @@ function Invoke-PgReindex() {
     $Verbose = if ($Conn.Verbose) {'VERBOSE'} else {''}
     $Object = $Object.ToUpper()
 
-    $SqlCmd = 'REINDEX ' + $Verbose + ' ' + $Object + ' ' + (Add-PgArgValueQuotes -Value $Name)
+    $SqlCmd = 'REINDEX ' + $Verbose + ' ' + $Object + ' ' + (Add-CmnArgValueQuotes -Value $Name)
 
     Invoke-PgSql -Conn $Conn -DbName $DbName -Command $SqlCmd
 }
@@ -152,7 +153,7 @@ function Invoke-PgInit {
         username = $UserName;
         waldir = $WalDir;
     }
-    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+    $ArgsStr = Get-CmnArgsGNU -ArgList $ArgList
 
     Invoke-PgExec -Conn $Conn -ExecName 'initdb' -ArgStr $ArgsStr    
 }
@@ -193,7 +194,7 @@ function Invoke-PgBasebackup {
         z = $GZip;
 
     }
-    $ArgStr = Get-PgArgs -ArgStr $ArgStr -ArgList $ArgList1
+    $ArgStr = Get-CmnArgsPosix -ArgStr $ArgStr -ArgList $ArgList1
 
     $ArgList2 = [ordered]@{
         R = $WriteRecoveryConf;
@@ -201,18 +202,21 @@ function Invoke-PgBasebackup {
         Z = $Compress;
         c = $Checkpoint;
         l = $Lable;
-
     }
-    $ArgStr = Get-PgArgs -ArgStr $ArgStr -ArgList $ArgList2
-    $ArgStr = Add-PgArg  -ArgStr $ArgStr -Name 'xlogdir' -ArgEnter '--' -ValueSep '='
+    $ArgStr = Get-CmnArgsPosix -ArgStr $ArgStr -ArgList $ArgList2
 
     $ArgList3 = [ordered]@{
+        xlogdir = $XLogDir;
+    }
+    $ArgStr = Get-CmnArgsGNU -ArgStr $ArgStr -ArgList $ArgList3
+
+    $ArgList4 = [ordered]@{
         P = $Progress;
         v = ($Conn.verb -or $Verb);
     }
-    $ArgStr = Get-PgArgs -ArgStr $ArgStr -ArgList $ArgList3
+    $ArgStr = Get-CmnArgsPosix -ArgStr $ArgStr -ArgList $ArgList4
 
-    $ArgList4 = [ordered]@{
+    $ArgList5 = [ordered]@{
         d = $Conn.dbname;
         h = $Conn.host;
         p = $Conn.port;
@@ -220,12 +224,12 @@ function Invoke-PgBasebackup {
         U = $Conn.username;
         w = $Conn.nopassword;
     }
-    $ArgStr = Get-PgArgs -ArgStr $ArgStr -ArgList $ArgList4
+    $ArgStr = Get-CmnArgsPosix -ArgStr $ArgStr -ArgList $ArgList5
 
-    $ArgList5 = [ordered]@{
+    $ArgList6 = [ordered]@{
         W = $Conn.password;
     }
-    $ArgStr = Get-PgArgs -ArgStr $ArgStr -ArgList $ArgList5
+    $ArgStr = Get-CmnArgsPosix -ArgStr $ArgStr -ArgList $ArgList6
 
     Invoke-PgExec -Conn $Conn -ExecName 'pg_basebackup' -ArgStr $ArgStr
 }
@@ -341,11 +345,10 @@ function Invoke-PgDump {
         password = $Conn.Password;
         role = $Role
     }
-
-    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+    $ArgsStr = Get-CmnArgsGNU -ArgList $ArgList
 
     if (-not [string]::IsNullOrEmpty($DbName)) {
-        $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $DbName)
+        $ArgsStr = $ArgsStr + ' ' + (Add-CmnArgValueQuotes -Value $DbName)
     }
 
     Invoke-PgExec -Conn $Conn -ExecName 'pg_dump' -ArgStr $ArgsStr    
@@ -437,7 +440,8 @@ function Invoke-PgRestore {
         role = $Role;
     }
 
-    $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $BackupFile)
+    $ArgsStr = Get-CmnArgsGNU -ArgList $ArgList
+    $ArgsStr = $ArgsStr + ' ' + (Add-CmnArgValueQuotes -Value $BackupFile)
 
     Invoke-PgExec -Conn $Conn -ExecName 'pg_restore' -ArgStr $ArgsStr
 }
@@ -511,16 +515,16 @@ function Invoke-PgSql {
         password = $Conn.password;
     }
 
-    $ArgsStr = Get-PgArgs -ArgList $ArgList -ArgEnter '--' -ValueSep '='
+    $ArgsStr = Get-CmnArgsGNU -ArgList $ArgList
 
     if ([string]::IsNullOrEmpty($DbName) -and (-not [string]::IsNullOrEmpty($Conn.dbname))) {
         $DbName = $Conn.dbname
     }
 
     if (-not [string]::IsNullOrEmpty($DbName)) {
-        $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $DbName)
+        $ArgsStr = $ArgsStr + ' ' + (Add-CmnArgValueQuotes -Value $DbName)
         if (-not [string]::IsNullOrEmpty($UserName)) {
-            $ArgsStr = $ArgsStr + ' ' + (Add-PgArgValueQuotes -Value $UserName)
+            $ArgsStr = $ArgsStr + ' ' + (Add-CmnArgValueQuotes -Value $UserName)
         }
     }
 
@@ -566,7 +570,7 @@ function Invoke-PgCtl {
         mode = $Mode;
     }
 
-    $ArgStr = Get-PgArgs -ArgList $ArgList1 -ArgStr $ArgStr -ArgEnter '--' -ValueSep '='
+    $ArgStr = Get-CmnArgsGNU -ArgList $ArgList1 -ArgStr $ArgStr
 
     $ArgList2 = [ordered]@{
         N = $ServiceName;
@@ -576,7 +580,7 @@ function Invoke-PgCtl {
         e = $EventSource;
     }
 
-    $ArgStr = Get-PgArgs -ArgList $ArgList2 -ArgStr $ArgStr
+    $ArgStr = Get-CmnArgsPosix -ArgList $ArgList2 -ArgStr $ArgStr
 
     $StartProcess = ($Command -in @('start', 'restart'))
 
@@ -584,7 +588,7 @@ function Invoke-PgCtl {
 }
 
 function Invoke-PgExec($Conn, $ExecName, $ArgStr, [switch]$StartProcess) {
-    $FilePath = Add-PgPath -Path (Get-PgBin -Conn $Conn) -AddPath $ExecName 
+    $FilePath = Add-CmnPath -Path (Get-PgBin -Conn $Conn) -AddPath $ExecName 
     $InvokeError = $null
     $InvokeOut = $null
     $StartTime = Get-Date
@@ -605,106 +609,3 @@ function Invoke-PgExec($Conn, $ExecName, $ArgStr, [switch]$StartProcess) {
 function Get-PgBin($Conn) {
     $Conn.bin
 }
-
-####
-# AUXILIARY FUNC
-####
-
-function Get-PgPathParent($Path) {
-    $Info = [System.IO.DirectoryInfo]::new($Path)
-    $Info.Parent.FullName
-}
-
-function Get-PgPathBaseName($Path) {
-    $Info = [System.IO.DirectoryInfo]::new($Path)
-    $Info.BaseName
-}
-
-function Get-PgArgs($ArgList, $ArgStr = '', $ArgSep = ' ', $ArgEnter = '-', $ValueSep = ' ') {
-    foreach ($ArgKey in $ArgList.Keys) {
-        $ArgStr = Add-PgArg -ArgStr $ArgStr -Name $ArgKey -Value ($ArgList.$ArgKey) -ArgSep $ArgSep -ArgEnter $ArgEnter -ValueSep $ValueSep
-    }
-    $ArgStr
-}
-
-function Add-PgArg($ArgStr, $Name, $Value, $DefaultValue,  $ArgSep = ' ', $ArgEnter = '-', $ValueSep = ' ') {
-    
-    if ($Value -eq $null) {$Value = $DefaultValue}
-    if ($Value -eq $null) {return $ArgStr}
-    if ($Value -eq '') {return $ArgStr}
-
-    $Name = $Name.Replace('_', '-')
-
-    $CurArg = ''
-    if (($Value -is [bool]) -or ($Value -is [switch]) -or ($Value -eq $true) -or ($Value -eq $false)) {
-        if ($Value) {
-            $CurArg = $ArgEnter + $Name
-        }
-    }
-    elseif ($Value -is [System.Array]) {
-        foreach ($ArrayValueItem in $Value) {
-            $CurArg = Add-PgArg -ArgStr $CurArg -Name $Name -Value $ArrayValueItem -DefaultValue $DefaultValue -ArgSep $ArgSep -ArgEnter $ArgEnter -ValueSep $ValueSep
-        }
-    }
-    else {
-        $Value = [string]$Value
-        if ($Value -match '[\s;.,-]') {
-            $CurArg = $ArgEnter + $Name + $ValueSep + '"' + $Value + '"'
-        }
-        else {
-            $CurArg = $ArgEnter + $Name + $ValueSep + $Value
-        }
-    }
-
-    if (-not [string]::IsNullOrEmpty($CurArg)) {
-        $ArgStr = $ArgStr + $ArgSep + $CurArg
-    }
-    $ArgStr    
-} 
-
-function Add-PgArgValueQuotes([string]$Value, $Quote = '"') {
-    if ((-not ($Value.StartsWith($Quote) -and $Value.EndsWith($Quote))) -and ($Value -match '[\s;.,-]')) {
-        $Value = $Quote + $Value + $Quote
-    }
-    $Value
-}
-
-function Test-PgDir($Path, [switch]$CreateIfNotExist) {
-    if ($Path -eq $null) {Return}
-    $TestRes = Test-Path -Path $Path
-    if (-not $TestRes -and $CreateIfNotExist) {
-        $Item = New-Item -Path $Path -ItemType Directory
-        $TestRes = Test-Path -Path $Item.FullName
-    }
-    $TestRes
-}
-
-function Add-PgPath($Path, $AddPath, $Sep = '\') {
-    
-    if ([String]::IsNullOrEmpty($AddPath)) {return $path}
-    if ([String]::IsNullOrEmpty($Path)) {return $AddPath}
-
-    if ($AddPath -is [System.Array]) {
-        foreach ($AddPathItem in $AddPath) {
-            $Path = Add-PgPath -Path $Path -AddPath $AddPathItem -Sep $Sep
-        }
-    }
-    else {
-        if ($Path.EndsWith($Sep)) {
-            $Path = $Path.Substring(0, $Path.Length - 1)
-        }
-
-        if ($AddPath.StartsWith($Sep)) {
-            $AddPath = $AddPath.Substring(1, $Path.Length - 1)
-        }
-        $Path = $Path + $Sep + $AddPath    
-    }
-
-    $Path
-}
-
-function Add-PgString($Str, $Add, $Sep = '') {
-    if ([String]::IsNullOrEmpty($Str)) {return $Add}
-    elseif ([String]::IsNullOrEmpty($Add)) {return $Str}
-    else {return $Str + $Sep + $Add}
-} 
