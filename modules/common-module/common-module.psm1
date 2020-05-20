@@ -120,7 +120,7 @@ function Add-CmnString($Str, $Add, $Sep = '') {
     if ($Add -is [System.Array]) {
         $Result = $Str
         foreach ($AddItem in $Add) {
-            $Result = Add-AuxLogString -Str $Result -Add $AddItem -Sep $Sep
+            $Result = Add-CmnString -Str $Result -Add $AddItem -Sep $Sep
         }
     }
     else {

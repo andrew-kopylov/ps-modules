@@ -1,11 +1,18 @@
 ﻿
+# Version 1.1
+
 function Send-SlackWebHook {
     param (
         $HookUrl,
-        $Text
+        $Text,
+        $Header
     )
 
     if ([string]::IsNullOrEmpty($HookUrl)) {return}
+
+    if (-not [string]::IsNullOrEmpty($Header)) {
+        $Text = "*$Header*\n$Text"
+    }
 
     $Body = @{
         text = $Text

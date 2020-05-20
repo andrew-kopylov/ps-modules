@@ -77,15 +77,13 @@ function Invoke-GitCommit {
     $FileIsTemp = $false
 
     if (-not [string]::IsNullOrEmpty($Message)) {    
+        $File = $null
         if (([string]$Message).Split("`n").Count -gt 1) {
             $FileIsTemp = $true
             $File = [System.IO.Path]::GetTempFileName()
             $Message | Out-File -FilePath $File
             $Message = $null
         }
-    }
-    else {
-        $File = $null
     }
 
     $CommitAuthor = $null

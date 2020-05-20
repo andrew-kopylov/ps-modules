@@ -962,19 +962,6 @@ function Get-1CCRObjectsFromFile($FilePath) {
     $Objects
 }
 
-function Get-1CCRVersionTmpl {
-    return @{
-        Version = 0;
-        User = '';
-        Date = $null;
-        Time = $null;
-        Comment = '';
-        #Added = $null;
-        #Changed = $null;
-        #Deleted = $null;
-    }
-}
-
 # Read objects from "out" result command.
 function Get-1CCRProcessedObjectsOut([string]$OutText) {
 
