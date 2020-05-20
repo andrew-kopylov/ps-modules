@@ -1,10 +1,12 @@
 ﻿
+Import-Module 1c-common-module
+
 ####
 # MANAGE 1C-MODULE
 ####
 
 function Get-1CModuleVersion() {
-    '1.4.10'
+    '2.0.0'
 }
 
 function Update-1CModule ($Log) {
@@ -173,94 +175,6 @@ function Get-1CService ($Name, $Status) {
         $sr = $sr | where {$_.Status -in $Status}
     }
     $sr
-}
-
-
-####
-# INIT PARAMETERS FUNCTION
-####
-
-# Platform parameters {Ver, Cat}.
-function Get-1CV8($Ver = '', $Dir = '') {
-    @{Ver = $Ver; Dir = $Dir}
-}
-
-# Base connection parameters.
-function Get-1CConn {
-    param (
-        $V8,
-        $File,
-        $Srvr,
-        $Ref,
-        $Usr,
-        $Pwd,
-        $CRPath,
-        $CRUsr,
-        $CRPwd,
-        $Extension,
-        $UC,
-        $AgSrvr,
-        $AgUsr,
-        $AgPwd,
-        $ClSrvr,
-        $ClUsr,
-        $ClPwd,
-        $Visible,
-        $DisableStartupMessages,
-        $DisableStartupDialogs,
-        $Local,
-        $VLocal,
-        $Timeout,
-        $Conn
-    )
-    
-    $NewConn = @{
-        V8 = $V8;
-        File = $File;
-        Srvr = $Srvr;
-        Ref = $Ref;
-        Usr = $Usr;
-        Pwd = $Pwd;
-        CRPath = $CRPath;
-        CRUsr = $CRUsr;
-        CRPwd = $CRPwd;
-        Extension = $Extension;
-        UC = $UC;
-        AgSrvr = $AgSrvr;
-        AgUsr = $AgUsr;
-        AgPwd = $AgPwd;
-        ClSrvr = $ClSrvr;
-        ClUsr = $ClUsr;
-        ClPwd = $ClPwd;
-        Visible = $Visible;
-        DisableStartupMessages = $DisableStartupMessages;
-        DisableStartupDialogs = $DisableStartupDialogs;
-        Local = $Local;
-        VLocal = $VLocal;
-        Timeout = $Timeout;
-    }
-
-    if ($Conn -ne $null) {
-        $UnionConn = @{}
-        foreach ($Key in $Conn.Keys) {
-            if ($NewConn.$Key -eq $null) {
-                $NewConn.$Key = $Conn.$Key
-            }
-        }
-    }
-
-    $NewConn.AgUsr = [string]$NewConn.AgUsr;
-    $NewConn.AgPwd = [string]$NewConn.AgPwd;
-    $NewConn.ClUsr = [string]$NewConn.ClUsr;
-    $NewConn.ClPwd = [string]$NewConn.ClPwd;
-
-    return $NewConn
-}
-
-# Log parameters.
-function Get-1CLog($Dir, $Name, $Dump, $ClearDump = $true) {
-    # Log directory, Log file base name, Dump catalog for /Out /DumpResult
-    @{Dir = $Dir; Name = $Name; Dump = $Dump; ClearDump = $ClearDump;}
 }
 
 
@@ -516,15 +430,15 @@ function Invoke-1CCompareCfg {
     if ($ResultObjectsArgument.OK -ne 1) {Return $ResultObjectsArgument}
     $ProcessArgs = $ResultObjectsArgument.ProcessArgs
 
-    $FirstCfgDescr = Add-String -Str $FirstConfigurationType -Add ($ArgsTable.FirstName + $ArgsTable.FirstFile + $ArgsTable.FirstVersion) -Sep ' '
+    $FirstCfgDescr = Add-CmnString -Str $FirstConfigurationType -Add ($ArgsTable.FirstName + $ArgsTable.FirstFile + $ArgsTable.FirstVersion) -Sep ' '
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.FirstCfg" -LogText $FirstCfgDescr
     
-    $SecondCfgDescr = Add-String -Str $SecondConfigurationType -Add ($ArgsTable.SecondName + $ArgsTable.SecondFile + $ArgsTable.SecondVersion) -Sep ' '
+    $SecondCfgDescr = Add-CmnString -Str $SecondConfigurationType -Add ($ArgsTable.SecondName + $ArgsTable.SecondFile + $ArgsTable.SecondVersion) -Sep ' '
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.SecondCfg" -LogText $SecondCfgDescr
     
     $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
 
-    Remove-1CResultDump -Log $Log -DumpFile $ResultObjectsArgument.DumpFile
+    Remove-1CResultDump -DumpFile $ResultObjectsArgument.DumpFile
 
     if ($Result.OK -ne 1) {
         $Msg = 'Ошибка сравнения конфигураций.';
@@ -576,7 +490,7 @@ function Invoke-1CDumpCfg($Conn, $CfgFile, $Log) {
     $ProcessArgs = '/DumpCfg "[CfgFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile);
 
-    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
+    Test-CmnDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile)) -CreateIfNotExist
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText $CfgFile
 
@@ -636,7 +550,7 @@ function Invoke-1CDumpCfgToFiles {
 
     $ProcessArgs = Get-1CArgs -TArgs $TProcessArgs -ArgsStr $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
 
-    Test-AddDir -Path $FilesDir
+    Test-CmnDir -Path $FilesDir -CreateIfNotExist
     
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.Dir" -LogText $FilesDir
 
@@ -790,7 +704,7 @@ function Invoke-1CCRDumpCfg($Conn, $CfgFile, $v, $Log) {
     $ProcessArgs = '/ConfigurationRepositoryDumpCfg "[CfgFile]"'
     $ProcessArgs = $ProcessArgs.Replace('[CfgFile]', $CfgFile)
 
-    Test-AddDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile))
+    Test-CmnDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile)) -CreateIfNotExist
 
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText ('version ' + $v + ' - ' + $CfgFile)
     
@@ -898,12 +812,12 @@ function Invoke-1CCRClearChache {
         $ResultLocal = Invoke-1CCRClearChache -Conn $Conn -ChacheType Local -Log $Log
         $Result = Get-1CProcessResult -OK 1 -Msg ''
         if ($ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1 -or $ResultLocalDB.OK -ne 1) {$Result.OK = 0}
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocalDB.Msg
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultGlobal.Msg
-        $Result.Msg = Add-String -Str $Result.Msg -Add $ResultLocal.Msg
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocalDB.Out
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultGlobal.Out
-        $Result.Out = Add-String -Str $Result.Out -Add $ResultLocal.Out
+        $Result.Msg = Add-CmnString -Str $Result.Msg -Add $ResultLocalDB.Msg
+        $Result.Msg = Add-CmnString -Str $Result.Msg -Add $ResultGlobal.Msg
+        $Result.Msg = Add-CmnString -Str $Result.Msg -Add $ResultLocal.Msg
+        $Result.Out = Add-CmnString -Str $Result.Out -Add $ResultLocalDB.Out
+        $Result.Out = Add-CmnString -Str $Result.Out -Add $ResultGlobal.Out
+        $Result.Out = Add-CmnString -Str $Result.Out -Add $ResultLocal.Out
     }
     elseif ($ChacheType.ToUpper() -eq 'LocalDB'.ToUpper()) {
         $ProcessName = 'CRClearCache';
@@ -964,34 +878,6 @@ function Invoke-1CCRSetLabel ($Conn, $v, $Label, $LabelComment, $Log) {
     Invoke-1CProcess -Conn $Conn -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Log $Log
 }
 
-function Invoke-1CCRReportTXT {
-    param(
-        $Conn,
-        $ReportFile,
-        $NBegin,
-        $NEnd,
-        [switch]$GroupByObject,
-        [switch]$GroupByComment,
-        $Log
-    )
-
-    $TempReportFileMXL = $ReportFile + '-tmp.mxl'
-
-    $Result = Invoke-1CCRReport -Conn $Conn -ReportFile $TempReportFileMXL -NBegin $NBegin -NEnd $NEnd -GroupByObject:$GroupByObject -GroupByComment:$GroupByComment -Log $Log
-    if ($Result.OK = 1 -and (Test-Path -Path $TempReportFileMXL)) {
-        $ComConn = Get-1CComConnection -Conn $Conn
-        Convert-1CMXLtoTXT -ComConn $ComConn -MXLFile $TempReportFileMXL -TXTFile $ReportFile
-        if (-not (Test-Path -Path $ReportFile)) {
-            $MsgText = 'Ошибка конвертации отчета хранилища из формата MXL в TXT.'
-            Add-1CLog -Log $Log -ProcessName 'ConvertMXLtoTXT' -LogHead 'Error' -LogText $MsgText -Result $Result -OK 0
-        }
-    }
-    if (Test-Path -Path $TempReportFileMXL) {
-        Remove-Item -Path $TempReportFileMXL
-    }
-    $Result
-}
-
 function Invoke-1CCRReport {
     param(
         $Conn,
@@ -1015,251 +901,6 @@ function Invoke-1CCRReport {
     $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgsStr $ProcessArgs -ArgEnter '-'
 
     Invoke-1CProcess -Conn $Conn -ProcessName 'CRReport' -ProcessArgs $ProcessArgs -Log $Log
-}
-
-function ConvertFrom-1CCRReport {
-    param (
-        $TXTFile,
-        [ValidateSet('UploadedAsTXT', 'ConvertedFromMXL')]
-        $FileType
-    )
-
-    if (-not [String]::IsNullOrEmpty($FileType)) {
-        $IsConvertedFromMXL = ($FileType -eq 'ConvertedFromMXL')
-    }
-    else {
-        $IsConvertedFromMXL = $null
-    }
-
-
-    $RepParams = @{
-        CRPath = 'Отчет по версиям хранилища';
-        RepDate = 'Дата отчета';
-        RepTime = 'Время отчета';
-        Version = 'Версия';
-        User = 'Пользователь';
-        CreateDate = 'Дата создания';
-        CreateTime = 'Время создания';
-        Comment = 'Комментарий';
-        Added = 'Добавлены';
-        Changed = 'Изменены';
-        Deleted = 'Удалены';
-    }
-
-    $Report = @{
-        CRPath = '';
-        RepDate = '';
-        RepTime = '';
-        Versions = @();
-    }
-
-    $Version = $null;
-    
-    # Version, User, Date, Comment, Added (array), Changed (array)
-    $ReportText = Get-Content -Path $TXTFile
-    $ReportText += '' # For correct processed end
-
-    $ParamPattern = '^(?<param>\w+.*?):\s*(?<value>.*)'
-
-    #++ For ver Report converted TXT from MXL
-    $BeginCommentPattern = '^"(?<text>(?:"")*(?:[^"]|$).*)'
-    $EndCommentPattern = '(?<text>.*(?:[^"]|^)(?:"")*)"(?:$|\s)'
-    #--
-
-    #++ For ver Report loaded as TXT
-    $AddedPattern = '^\sДобавлены\s\d+'
-    $ChangedPattern = '^\sИзменены\s\d+'
-    $DeletedPattern = '^\sУдалены\s\d+'
-    #--
-
-    $Comment = $null
-    $Added = $null
-    $Changed = $null
-    $Deleted = $null
-
-    foreach ($RepStr in $ReportText) {
-
-        # Autodefine by comment file type.
-        if (($IsConvertedFromMXL -eq $null) -and ($Comment -ne $null)) {
-            if ($RepStr -match $ParamPattern) {
-                $ParamName = $Matches.param
-                $ParamValue = $Matches.value
-                if ($ParamName = $RepParams.Comment) {
-                    $IsConvertedFromMXL = $true
-                    $Comment = $null
-
-                }
-            }
-            if ($IsConvertedFromMXL -ne $true) {$IsConvertedFromMXL = $false}
-        }
-
-        # Parce text
-        if ($Comment -ne $null) {
-
-            # Comment
-            
-            if ($IsConvertedFromMXL) {
-                if ($RepStr -match $EndCommentPattern) {
-                    $Comment = $Comment + '
-                    ' + $Matches.text.Trim()
-                    $Version.Comment = $Comment.Replace('""', '"')
-                    $Comment = $null # End comment
-                }
-                else {
-                    $Comment = $Comment + '
-                    ' + $RepStr.Trim()
-                }
-            } #-- Conveted from MXL
-            else {
-                if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                    $Version.Comment = $Comment.Trim()
-                    $Comment = $null # End comment
-                }
-                elseif ($Comment -eq '') {
-                    $Comment = $RepStr.Trim() # Begin comment
-                }
-                else {
-                    $Comment = $Comment + '
-                    ' + $RepStr.Trim()
-                }
-            } #-- Loaded as TXT
-        }
-        elseif ($Added -is [System.Array]) {
-
-            # Added objects 
-            
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Added = $Added
-                $Added = $null
-            } 
-            else {
-                $Added += $RepStr.Trim()
-            }
-
-        }
-        elseif ($Changed -is [System.Array]) {
-
-            # Changed objects
-
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Changed = $Changed
-                $Changed = $null
-            } 
-            else {
-                $Changed += $RepStr.Trim()
-            }
-        }
-        elseif ($Deleted -is [System.Array]) {
-
-            # Deleted objects
-
-            if ([String]::IsNullOrWhiteSpace($RepStr)) {
-                $Version.Deleted = $Deleted
-                $Deleted = $null
-            } 
-            else {
-                $Deleted += $RepStr.Trim()
-            }
-        }
-        elseif ($RepStr -match $ParamPattern) {
-
-            # Parameter - "Name: Value"
-
-            $ParamName = $Matches.param
-            $ParamValue = $Matches.value
-
-            if ($ParamName -eq '') {
-                continue;
-            }
-            elseif ($ParamName -eq $RepParams.Version) {
-                
-                if ($Version -ne $null) {
-                    $Report.Versions += $Version
-                }
-
-                $Version = Get-1CCRVersionTmpl
-
-                $ParamValue = $ParamValue.Trim()
-
-                $NumbSep = [string][char]160
-                if ($ParamValue.Contains($NumbSep)) {$ParamValue = $ParamValue.Replace($NumbSep,'')}
-
-                $NumbSep = [string][char]32
-                if ($ParamValue.Contains($NumbSep)) {$ParamValue = $ParamValue.Replace($NumbSep,'')}
-
-                $Version.Version = $ParamValue
-
-            }
-            elseif ($ParamName -eq $RepParams.User) {
-                $Version.User = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.CreateDate) {
-                $Version.Date = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.CreateTime) {
-                $Version.Time = $ParamValue.Trim();
-                if (-not $IsConvertedFromMXL) {
-                    # Init comment reading after CreateTime string
-                    $Comment = '' 
-                }
-            }
-            elseif ($ParamName -eq $RepParams.Comment) {
-                $Comment = [string]$ParamValue
-                if ([String]::IsNullOrWhiteSpace($Comment)) {
-                    $Comment = $null
-                }
-                else {
-                    if ($Comment -match $BeginCommentPattern) {
-                        $Comment = $Matches.text
-                    }
-                    else {
-                        # Однострочный комментарий.
-                        $Version.Comment = $Comment.Trim()
-                        $Comment = $null
-                    }
-                    if ($Comment -ne $null -and $Comment -match $EndCommentPattern) {
-                        $Version.Comment = $Matches.text.Replace('""', '"')
-                        $Comment = $null
-                    }
-                }
-            }
-            elseif ($ParamName -eq $RepParams.Added) {
-                [String[]]$Added = @($ParamValue)
-            }
-            elseif ($ParamName -eq $RepParams.Changed) {
-                [String[]]$Changed = @($ParamValue)
-            }
-            elseif ($ParamName -eq $RepParams.Deleted) {
-                [String[]]$Deleted = @($ParamValue)
-            }
-            elseif ($ParamName -eq $RepParams.CRPath) {
-                $Report.CRPath = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.RepDate) {
-                $Report.RepDate = $ParamValue.Trim();
-            }
-            elseif ($ParamName -eq $RepParams.RepTime) {
-                $Report.RepTime = $ParamValue.Trim();
-            }
-        }
-        elseif (-not $IsConvertedFromMXL) {
-            if ($RepStr -match $AddedPattern) {
-                [String[]]$Added = @()
-            }
-            elseif ($RepStr -match $ChangedPattern) {
-                [String[]]$Changed = @()
-            }
-            elseif ($RepStr -match $DeletedPattern) {
-                [String[]]$Deleted = @()
-            }
-        }
-    }
-
-    if ($Version -ne $null) {
-        $Report.Versions += $Version
-    }
-    
-    $Report
 }
 
 function Invoke-1CCROptimizeData ($Conn, $Log) {
@@ -1379,11 +1020,11 @@ function Invoke-1CCRObjectsCommand($Conn, $ProcessName, $ObjectsCommand, $Object
     $ProcessArgs = $ResultObjectsArgument.ProcessArgs
 
     # Addition command for object action.
-    $ProcessArgs = Add-String -Str $ProcessArgs -Add $AddCmd -Sep ' '
+    $ProcessArgs = Add-CmnString -Str $ProcessArgs -Add $AddCmd -Sep ' '
 
     [hashtable]$Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
  
-    Remove-1CResultDump -Log $Log -DumpFile $ResultObjectsArgument.DumpFile
+    Remove-1CResultDump -DumpFile $ResultObjectsArgument.DumpFile
     $Result.Add('ProcessedObjects', @())
 
     if ($Result.OK -ne 1) {
@@ -1639,409 +1280,6 @@ function Get-1CCRLockingObject([string]$Metadata) {
 }
 
 
-####
-# 1C-Administration
-####
-
-function Test-1CCfChanged($Conn) {
-    $ComConn = Get-1CComConnection -Conn $Conn
-    $IsChanged = Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'ConfigurationChanged'
-    Remove-Variable -Name 'ComConn'
-    $IsChanged
-}
-
-function Remove-1CIBConnections() {
-    param (
-        $Conn,
-        [ValidateSet('1CV8', '1CV8C', 'Designer', 'COMConsole', 'SrvrConsole', 'BackgroundJob', 'COMConnection', 'WebClient', 'WSConnection')]
-        $Application,
-        $ConnectedBefore,
-        $Log
-    )
-    
-    $ProcessName = 'TeminateConnections'
-    
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'Start'
-    $ConnectionsInfo = Get-1CIBConnections -Conn $Conn
-
-    $TerminatedConnections = @()
-    foreach ($Connection in $ConnectionsInfo.Connections) {
-
-        # Filter by AppID (1CV8, 1CV8C, Designer, COMConsole, SrvrConsole, ...)
-        if ($Application -ne $null -and $Connection.Application -notin $Application) {continue}
-        if ($ConnectedBefore -ne $null -and $Connection.ConnectedAt -ge $ConnectedBefore) {continue}
-        if ($Connection.Application -like 'SrvrConsole') {continue}
-        
-        $ConnectionsInfo.WPConnection.Disconnect($Connection)
-        $ConnectionDescr = [ordered]@{
-            ConnID = $Connection.ConnID;
-            Application = $Connection.Application;
-            Host = $Connection.Host;
-            ConnectedAt = $Connection.ConnectedAt;
-            SessionID = $Connection.SessionID;
-            Process = $Connection.Process;
-        }
-        $TerminatedConnections += $Connection;
-        $ConnectionDescr = Get-1CArgs -TArgs $ConnectionDescr -ArgEnter '' -ValueSep '=' -ArgSep ' '
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Done' -LogText ('Connection ' + $ConnectionDescr)
-    }    
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'End'
-}
-
-function Get-1CIBConnections($Conn) {
-    $IBInfo = Get-1CIBInfo -Conn $Conn
-    $Connections = $IBInfo.WPConnection.GetInfoBaseConnections($IBInfo.InfoBase)
-    @{
-        Agent = $IBInfoShort.Agent;
-        Cluster = $IBInfoShort.Cluster;
-        InfoBase = $IBInfoShort.InfoBase;
-        WPConnection = $IBInfo.WPConnection;
-        WorkingProcess = $IBInfo.WorkingProcess;
-        Connections = $Connections;
-    }
-}
-
-function Remove-1CIBSessions() {
-    param (
-        $Conn,
-        [string]$TermMsg,
-        [ValidateSet('1CV8', '1CV8C', 'Designer', 'COMConsole', 'SrvrConsole', 'BackgroundJob', 'COMConnection', 'WebClient', 'WSConnection')]
-        $AppID,
-        $StartedBefore,
-        $Log
-    )
-    $ProcessName = 'TeminateSessions'
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText ('Start "' + $TermMsg + '"')
-    $SessionsInfo = Get-1CIBSessions -Conn $Conn
-    $Agent = $SessionsInfo.Agent
-    $Sessions = $SessionsInfo.Sessions
-    $TerminatedSessions = @()
-    foreach ($Session in $Sessions) {
-
-        # Filter by AppID (1CV8, 1CV8C, Designer, COMConsole, SrvrConsole, ...)
-        if ($AppID -ne $null -and $Session.AppID -notin $AppID) {continue}
-        if ($StartedBefore -ne $null -and $Session.StartedAt -ge $StartedBefore) {continue}
-        if ($Session.AppID -like 'SrvrConsole') {continue}
-        
-        $Agent.TerminateSession($SessionsInfo.Cluster, $Session, $TermMsg)
-        $SessionDescr = [ordered]@{
-            ID = $Session.SessionID;
-            User = $Session.UserName;
-            AppID = $Session.AppID;
-            Host = $Session.Host;
-            Started = $Session.StartedAt;
-            cpuCurr = $Session.cpuTimeCurrent;
-            cpu5min = $Session.cpuTimeLast5Min;
-        }
-        $TerminatedSessions += $Session;
-        $SessionDescr = Get-1CArgs -TArgs $SessionDescr -ArgEnter '' -ValueSep '=' -ArgSep ' '
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Done' -LogText ('Session ' + $SessionDescr)
-
-    }    
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogText 'End'
-}
-
-function Get-1CIBSessions($Conn) {
-    $IBInfoShort = Get-1CIBInfo -Conn $Conn -ShortInfo
-    $Sessions = $IBInfoShort.Agent.GetInfoBaseSessions($IBInfoShort.Cluster, $IBInfoShort.InfoBase)
-    @{
-        Agent = $IBInfoShort.Agent;
-        Cluster = $IBInfoShort.Cluster;
-        InfoBase = $IBInfoShort.InfoBase;
-        Sessions = $Sessions;
-    }
-}
-
-function Set-1CIBSessionsDenied($Conn, [switch]$Denied, $From, $To, [string]$Msg, [string]$PermissionCode) {
-
-    if ($From -is [datetime]) {
-        $From = $From.ToString('yyyy-MM-dd HH:mm:ss')
-    }
-
-    if ($To -is [datetime]) {
-        $To = $To.ToString('yyyy-MM-dd HH:mm:ss')
-    }
-    
-    $IBInfo = Get-1CIBInfo -Conn $Conn
-    $InfoBase = $IBInfo.InfoBase
-    $InfoBase.ConnectDenied = $Denied
-    if ($Denied) {
-        $InfoBase.DeniedFrom = $From
-        $InfoBase.DeniedTo = $To
-        $InfoBase.DeniedMessage = $Msg
-        if ($PermissionCode -ne '') {
-            $InfoBase.PermissionCode = $PermissionCode
-        }
-    }
-    $IBInfo.WPConnection.UpdateInfoBase($InfoBase)
-    $IBInfo
-}
-
-function Get-1CIBInfo($Conn, [switch]$ShortInfo) {
-
-    if ($ShortInfo) {
-
-        $ClusterInfo = Get-1CCluster -Conn $Conn -Auth
-  
-        $Agent = $ClusterInfo.Agent
-        $Cluster = $ClusterInfo.Cluster
-        $InfoBases = $Agent.GetInfoBases($Cluster)
-
-        $WPConnection = $null
-        $WorkingProcess = $null
-
-    }
-    else {
-    
-        $WPInfo = Get-1CWPConnection -Conn $Conn -Auth
-
-        $WPConnection = $WPInfo.WPConnection
-        if ($Conn.Usr -ne $null -and $Conn.Usr -ne '') {
-            $WPConnection.AddAuthentication($Conn.Usr, $Conn.Pwd)
-        } 
-
-        $Agent = $WPInfo.Agent;
-        $Cluster = $WPInfo.Cluster;
-        $WorkingProcess = $WPInfo.WorkingProcess;
-        $InfoBases = $WPConnection.GetInfoBases()
-
-    }
-
-    $FindedInfoBase = $null
-    
-    if (-not [string]::IsNullOrEmpty($Conn.Ref)) {
-        foreach ($InfoBase in $InfoBases) {
-            if ($InfoBase.Name -like $Conn.Ref) {
-                $FindedInfoBase = $InfoBase;
-                break
-            }
-        }
-    }
-   
-    @{
-        Agent = $Agent;
-        Cluster = $Cluster;
-        InfoBase = $FindedInfoBase;
-        WorkingProcess = $WorkingProcess;
-        WPConnection = $WPConnection;
-    }
-}
-
-function Get-1CWPConnection($Conn, $WorkingProcess, [switch]$Auth) {
-
-    $ClusterInfo = Get-1CCluster -Conn $Conn -Auth:$Auth   
-    if ($ClusterInfo -eq $null -or $ClusterInfo.Cluster -eq $null) {
-        return $null
-    }
-
-    if ($WorkingProcess -eq $null) {
-        $WorkingProcesses = $ClusterInfo.Agent.GetWorkingProcesses($ClusterInfo.Cluster)
-        if ($WorkingProcesses -eq $null -or $WorkingProcesses.GetLength(0) -eq 0) {
-            return $null
-        }
-        $WorkingProcess = $WorkingProcesses.GetValue($WorkingProcesses.GetUpperBound(0))
-    }
-    
-    $ComConntector = Get-1CComConnector -V8 $Conn.V8
-    $WPConnection = $ComConntector.ConnectWorkingProcess($WorkingProcess.hostname + ':' + $WorkingProcess.MainPort)
-
-    if ($Auth -and $WPConnection -ne $null) {
-        $WPConnection.AuthenticateAdmin($Conn.ClUsr, $Conn.ClPwd)
-    }
-
-    @{
-        Agent = $ClusterInfo.Agent;
-        Cluster = $ClusterInfo.Cluster;
-        WorkingProcess = $WorkingProcess;
-        WPConnection = $WPConnection;
-    }
-}
-
-function Get-1CWorkingProcesses($Conn, $Agent, $Cluster, [switch]$Auth) {
-
-    if ($Agent -eq $null) {
-        $Agent = Get-1CAgent -Conn $Conn -Auth:$Auth
-    }
-
-    if ($Cluster -eq $null) {
-        $ClusterInfo = Get-1CCluster -Conn $Conn -Agent $Agent -Auth:$Auth   
-        if ($ClusterInfo -eq $null -or $ClusterInfo.Cluster -eq $null) {
-            return $null
-        }
-        $Agent = $ClusterInfo.Agent
-        $Cluster = $ClusterInfo.Cluster
-    }
-    
-    $WorkingProcesses = $Agent.GetWorkingProcesses($Cluster)
-
-    @{
-        Agent = $Agent;
-        Cluster = $Cluster;
-        WorkingProcesses = $WorkingProcesses;
-    }
-}
-
-function Get-1CAllClusters($Conn, $Agent, [switch]$Auth) {
-    
-    if ($Agent -eq $null) {
-        $Agent = Get-1CAgent -Conn $Conn -Auth:$Auth
-    }
-    if ($Agent -eq $null) {
-        return $null
-    }
-    $Clusters = $Agent.GetClusters()
-
-    foreach ($Cluster in $Clusters) {
-        # Authentication on Cluster
-        if ($Auth) {
-            $Agent.Authenticate($Cluster, $Conn.ClUsr, $Conn.ClPwd)
-        }
-    }
-    @{Agent = $Agent; Clusters = $Clusters}
-}
-
-function Get-1CCluster($Conn, $Agent, [switch]$Auth) {
-    
-    if ($Agent -eq $null) {
-        $Agent = Get-1CAgent -Conn $Conn -Auth:$Auth
-    }
-    if ($Agent -eq $null) {
-        return $null
-    }
-    $Clusters = $Agent.GetClusters()
-
-    $FindedCluster = $null
-
-    # Cluster search
-    if ($Clusters.GetLength(0) -eq 0) {
-        # No clasters.
-    } elseif ($Clusters.GetLength(0) -eq 1) {
-       $FindedCluster = $Clusters.GetValue($Clusters.GetUpperBound(0))
-    } else {
-        foreach ($Cluster in $Clusters) {
-            if (Test-1CClusterConn -Cluster $Cluster -Conn $Conn) {
-                $FindedCluster = $Cluster
-                break;
-            }     
-        }
-        if ($FindedCluster -eq $null -and $Clusters.GetLength(0) -gt 1) {
-            $FindedCluster = $Clusters.GetValue($Clusters.GetUpperBound(0))
-        }
-    }
-
-    # Authentication on Cluster
-    if ($Auth -and $FindedCluster -ne $null) {
-        $Agent.Authenticate($FindedCluster, $Conn.ClUsr, $Conn.ClPwd)
-    }
-
-    @{Agent = $Agent; Cluster = $FindedCluster}
-}
-
-function Test-1CClusterConn($Cluster, $Conn) {
-    if (Test-1CClusterSrvrString -Cluster $Cluster -Srvr $Conn.ClSrvr) {
-        return ($true)
-    } elseif (Test-1CClusterSrvrString -Cluster $Cluster -Srvr $Conn.Srvr) {
-        return ($true)
-    } elseif ($Conn.AgSrvr -is [string] -and $Conn.AgSrvr -ne '') {
-        $AgSrvr = $Conn.AgSrvr.Split(':')[0];
-        $AgPort = $Conn.AgSrvr.Split(':')[1];
-        $AgPort = Get-ValueIfEmpty -Value $AgPort -IfEmptyValue '1540'
-        $ClPort = [decimal]$AgPort + 1
-        if ($Cluster.HostName -eq $AgSrvr -and $Cluster.MainPort -eq $ClPort) {
-            return ($true)
-        }
-    }
-    ($false)
-}
-
-function Test-1CClusterSrvrString($Cluster, [string]$Srvr) {
-    [string]$ClusterConnStr = $Cluster.HostName + ':' + $Cluster.MainPort
-    return ($ClusterConnStr.ToUpper() -eq $Srvr.ToUpper() -or $ClusterConnStr.ToUpper() -eq ($Srvr + ':1541').ToUpper())
-}
-
-function Get-1CAgent($Conn, [switch]$Auth) {
-    $ComConnector = Get-1CComConnector -V8 $Conn.V8
-    $AgentConnStr = $Conn.AgSrvr;
-    if ([string]::IsNullOrEmpty($AgentConnStr)) {
-        $SubstrSrvr = $Conn.Srvr.Split(':')
-        $AgentSrv = $SubstrSrvr[0]
-        $ClusterMngrPort = $SubstrSrvr[1]
-        if ([string]::IsNullOrEmpty($ClusterMngrPort)) {
-            $AgentConnStr = $AgentSrv
-        }
-        else {
-            $AgentPort = ([int]$ClusterMngrPort - 1)
-            $AgentConnStr = $AgentSrv + ':' + $AgentPort.ToString()
-        }
-    }
-    if ([string]::IsNullOrEmpty($AgentConnStr)) {
-        $AgentConnStr = 'localhost';
-    }
-    $AgentConn = $ComConnector.ConnectAgent($AgentConnStr)
-    if ($Auth) {
-        $AgentConn.AuthenticateAgent($Conn.AgUsr, $Conn.AgPwd)
-    }
-    $AgentConn;
-}
-
-
-####
-# COM-Connector (work with com-objects)
-####
-
-function Convert-1CMXLtoTXT($ComConn, $MXLFile, $TXTFile) {
-    # $ComConn - reterned by Get-1CComConnection
-    # SD - sheet document.
-    $SDFileTypeTXT = (Get-ComObjectProperty -ComObject $ComConn -PropertyName 'ТипФайлаТабличногоДокумента')[3]
-    $SD = Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'NewObject' -Parameters 'ТабличныйДокумент'
-    Invoke-ComObjectMethod -ComObject $SD -MethodName 'Прочитать' -Parameters $MXLFile
-    Invoke-ComObjectMethod -ComObject $SD -MethodName 'Записать' -Parameters ($TXTFile, $SDFileTypeTXT)
-}
-
-function Get-1CComConnection($Conn) {
-    $ComConnector = Get-1CComConnector -V8 $Conn.V8
-    $ComConnStr = Get-1CComConnectionString -Conn $Conn
-    $ComConn = $ComConnector.Connect($ComConnStr)
-    return $ComConn
-}
-
-function Get-1CComConnectionString($Conn) {
-    $TArgs = [ordered]@{
-        File = $Conn.File;
-        Srvr = $Conn.Srvr;
-        Ref = $Conn.Ref;
-        Usr = $Conn.Usr;
-        Pwd = $Conn.Pwd;
-        UC = $Conn.UC;
-    }
-    $ArgsStr = Get-1CArgs -TArgs $TArgs -ArgEnter '' -ValueSep '=' -ArgSep ';'
-    $ArgsStr
-}
-
-function Register-1CComConnector($V8) {
-    $BinDir = Get-1CV8Bin -V8 $V8
-    $DllPath = Add-1CPath -Path $BinDir -AddPath 'comcntr.dll'
-    $ProcessArgs = '/s "' + $DllPath + '"'
-    Start-Process -FilePath 'regsvr32.exe' -ArgumentList $ProcessArgs -NoNewWindow
-}
-
-function Get-1CComConnector($V8) {
-    New-Object -ComObject 'V83.ComConnector' -Strict 
-}
-
-function Get-1CComObjectString($ComConn, $ComObject) {
-    Invoke-ComObjectMethod -ComObject $ComConn -MethodName 'String' -Parameters $ComObject
-}
-
-function Get-ComObjectProperty($ComObject, $PropertyName) {
-    $PropertyValue = [System.__ComObject].InvokeMember($PropertyName, [System.Reflection.BindingFlags]::GetProperty, $null, $ComObject, $null)
-    $PropertyValue
-}
-
-function Invoke-ComObjectMethod($ComObject, $MethodName, $Parameters) {
-    $MethodReturn = [System.__ComObject].InvokeMember($MethodName, [System.Reflection.BindingFlags]::InvokeMethod, $null, $ComObject, $Parameters)
-    $MethodReturn
-}
 
 ####
 # INVOKE 1C-WEBINST
@@ -2172,14 +1410,15 @@ function Invoke-1CProcess {
         $ProcessArgs = Get-1CArgs -TArgs $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
     }
 
+
     $ArgList = ''
-    $ArgList = Add-String -Str $ArgList -Add $Mode -Sep ' '
-    $ArgList = Add-String -Str $ArgList -Add $ConnStr -Sep ' '
-    $ArgList = Add-String -Str $ArgList -Add $ProcessCommand -Sep ' /'
-    $ArgList = Add-String -Str $ArgList -Add $ProcessArgs -Sep ' '
+    $ArgList = Add-CmnString -Str $ArgList -Add $Mode -Sep ' '
+    $ArgList = Add-CmnString -Str $ArgList -Add $ConnStr -Sep ' '
+    $ArgList = Add-CmnString -Str $ArgList -Add $ProcessCommand -Sep ' /'
+    $ArgList = Add-CmnString -Str $ArgList -Add $ProcessArgs -Sep ' '
 
     if (-not [string]::IsNullOrEmpty($Conn.Extension)) {
-        $ArgList = Add-String -Str $ArgList -Add ('-Extension "' + $Conn.Extension + '"') -Sep ' '
+        $ArgList = Add-CmnString -Str $ArgList -Add ('-Extension "' + $Conn.Extension + '"') -Sep ' '
     }
 
     if ([String]::IsNullOrEmpty($ProcessName)) {
@@ -2260,8 +1499,8 @@ function Invoke-1CProcess {
         $OutValue = Get-Content -Path $Out -Raw
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Out' -LogText $OutValue
     
-        Remove-1CResultDump -Log $Log -DumpFile $Dump
-        Remove-1CResultDump -Log $Log -DumpFile $Out
+        Remove-1CResultDump -DumpFile $Dump
+        Remove-1CResultDump -DumpFile $Out
 
     }
     else {
@@ -2275,49 +1514,14 @@ function Invoke-1CProcess {
     $Result
 }
 
-# Get arguments string.
-function Get-1CArgs($TArgs, $ArgsStr = '', $ArgEnter = '/', $ValueSep = ' ', $ArgSep = ' ', $RoundValueSign = '', [switch]$IsMandatoryRoundSign) {
-    foreach ($ArgKey in $TArgs.Keys) {
-        $ArgValue = $TArgs.($ArgKey)
-
-        if ($ArgValue -eq $null) {continue}
-
-        $ArgStr = ''
-        if ($ArgValue -is [bool] -or $ArgValue -is [switch]) {
-            if ($ArgValue -eq $true) {
-                $ArgStr = $ArgEnter + $ArgKey
-            }
-        }
-        elseif ($ArgValue -is [string]) {
-            if (('[' + $ArgKey + ']').ToUpper() -eq $ArgValue.ToUpper()) {
-                # It's template: ArgValue = '[ArgKey]' then adding only ArgValue as template.
-                $ArgStr = $ArgValue
-            }
-            elseif ($IsMandatoryRoundSign -or ($ArgValue -match '\s')) {
-                $ArgStr = $ArgEnter + $ArgKey + $ValueSep + (Add-RoundSign -Str $ArgValue -RoundSign $RoundValueSign)
-            }
-            else {
-                $ArgStr = $ArgEnter + $ArgKey + $ValueSep + $ArgValue
-            }
-        }
-        else {
-            $ArgStr = $ArgEnter + $ArgKey + $ValueSep + $ArgValue.ToString()
-        }
-        $ArgsStr = Add-String -Str $ArgsStr -Add $ArgStr -Sep $ArgSep
-    }
-    $ArgsStr
-}
-
 # Standart return result.
 function Get-1CProcessResult($Dump = '0', $Out = '', $OK = 1, $Msg = '') {
     @{Out = $Out; Dump = $Dump; OK = $OK; Msg = $Msg}      
 }
 
-function Remove-1CResultDump($Log, $DumpFile) {
-    if ($Log.ClearDump) {  
-        if ($DumpFile -is [string] -and $DumpFile -ne '') {
-            Remove-Item -Path $DumpFile
-        }
+function Remove-1CResultDump($DumpFile) {
+    if (-not [string]::IsNullOrEmpty($DumpFile)) {
+        Remove-Item -Path $DumpFile
     }
 }
 
@@ -2325,321 +1529,15 @@ function Get-1CLogDumpDir($Log) {
 
     [string]$DumpDir = ''
 
-    if ($Log -ne $null) {
-        $DumpDir = $Log.Dump
+    if ($Log) {
+        $DumpDir = $Log.Dir
     }
  
     if ($DumpDir -eq '' -or $DumpDir -eq $null) {
         $DumpDir = $env:TEMP
     }
-    Test-AddDir -path $DumpDir
+    Test-CmnDir -path $DumpDir -CreateIfNotExist | Out-Null
 
     $DumpDir
 }
 
-# Log text for 1C process. 
-function Add-1CLog($Log, $ProcessName, $LogHead = "", $LogText, $Result = $null, $OK = $null) {
-
-    $LogDir = ''
-    $LogName = ''
-    $LogMark = $ProcessName;
-
-    if ($Log -ne $null) {
-        $LogDir = $Log.Dir
-        $LogName = $LogName.Name
-    }
-
-    if ($LogDir -eq '') {
-        $LogDir = Get-1CLogDumpDir -Log $Log
-    }
-    Test-AddDir -path $LogDir
-
-    $LogName = $Log.Name;
-    if ($LogName -eq '') {
-        $LogName = "1c-module";
-    }
-
-    $OutLogText = Add-LogText -LogDir $LogDir -LogName $LogName -LogMark $ProcessName -LogHead $LogHead -LogText $LogText;
-      
-    if ($Result -ne $null) {
-         if ($OK -ne $null) {$Result.OK = $OK}
-         $Result.Msg = Add-String -Str $Result.Msg -Add $LogText
-    }
-}
-
-# Return full filename 1cv8 ".../bin/1cv8.exe".
-function Get-1CV8Exe($V8) {
-    Add-1CPath -Path (Get-1Cv8Bin -V8 $V8) -AddPath '1cv8.exe'
-}
-
-function Get-1CV8Bin($V8) { 
-    $V8 = 1CV8VerInfo -V8 $V8
-    $V8DirVer = Add-1CPath -Path $V8.Dir -AddPath $V8.Ver
-    Add-1CPath -Path $V8DirVer -AddPath 'bin'
-}
-
-function Get-1CV8VerInfo($V8) {
-
-    if ($V8 -eq $null) {
-        $V8Dir = ''
-        $V8Ver = ''
-    }
-    elseif ($V8 -is [string]) {
-        $V8Dir = ''
-        $V8Ver = $V8
-    }
-    else {
-        $V8Dir = $V8.Dir     
-        $V8Ver = $V8.Ver
-    }
-
-    $V8Dir32 = 'C:\Program Files (x86)\1cv8'
-    $V8Dir64 = 'C:\Program Files\1cv8'
-
-    if ($V8Dir -eq 'x64') {
-        $V8Dir = $V8Dir64
-    }
-    elseif ($V8Dir -eq 'x32') {
-        $V8Dir = $V8Dir32
-    }
-    if ($V8Ver -eq 'x64') {
-        $V8Ver = ''
-        $V8Dir = $V8Dir64
-    }
-    elseif ($V8Ver -eq 'x32') {
-        $V8Ver = ''
-        $V8Dir = $V8Dir32
-    }
-    else {
-        if (Test-Path -Path $V8Dir64) {
-            $V8Dir = $V8Dir64
-        }
-        else {
-            $V8Dir = $V8Dir32
-        }    
-    }
-
-    if ($V8Ver -eq '' -or $V8Ver -eq $null) {
-        # Seach last version.
-        $DirMask = Add-1CPath -Path $V8Dir -AddPath ('*.*.*.*')
-        $LastVerDir = Get-ChildItem -Path $DirMask -Directory | Sort-Object -Property 'Name' | Select-Object -Last 1
-        $V8Ver = $LastVerDir.Name
-        $V8Dir = $LastVerDir.Parent.FullName
-    }
-
-    @{Dir = $V8Dir; Ver = $V8Ver}
-}
-
-function Get-1CConnStringCommon($Conn) {
-    
-    $TArgs = [ordered]@{}
-
-    if (-not [String]::IsNullOrEmpty($Conn.File)) {
-        $TArgs.File = $Conn.File
-    }
-    else {
-        $TArgs.Srvr = $Conn.Srvr
-        $TArgs.Ref = $Conn.Ref
-    }
-
-    if (-not [String]::IsNullOrEmpty($Conn.Usr)) {
-        $TArgs.Usr = $Conn.Usr
-        $TArgs.Pwd = $Conn.Pwd
-    }
-
-    $ConnString = (Get-1CArgs -TArgs $TArgs -ArgEnter '' -ValueSep '=' -ArgSep ';' -RoundValueSign '""' -IsMandatoryRoundSign) + ';'
-    $ConnString
-}
-
-function Get-1CConnString($Conn) {
-    $Base = Get-1CConnStringBase -Conn $Conn
-    $Auth = Get-1CConnStringAuth -Conn $Conn
-    $CR = Get-1CCRConnString -Conn $Conn
-    $ConnStr = ''
-    if ($Conn.UC -ne $null -and $Conn.UC -ne '') {
-        $ConnStr = Add-String -str $ConnStr -Add ('/UC ' + $Conn.UC) -Sep ' ';
-    }
-    $ConnStr = Add-String -str $ConnStr -Add $Base -Sep ' ';
-    $ConnStr = Add-String -str $ConnStr -Add $Auth -Sep ' ';
-    $ConnStr = Add-String -str $ConnStr -Add $CR -Sep ' ';
-
-    if ($Conn.Visible -eq $true) {
-        $ConnStr = Add-String -str $ConnStr -Add ' /Visible' -Sep ' ';
-    }
-
-    $ConnStr 
-}
-
-function Get-1CConnStringBase($Conn) {
-    # Base path parameters $Prm @{File, Srvr, Ref}.
-    $Base = '';
-    if ($Conn.File -ne '' -and $Conn.File -ne $null) {
-        $Base = '/F "[File]"';
-        $Base = $Base.Replace("[File]", $Conn.File);
-    }
-    elseif ($Conn.Ref -ne '' -and $Conn.Ref -ne $null) {
-        $Base = '/S "[Srvr]\[Ref]"';
-        $Base = $Base.Replace("[Srvr]", $Conn.Srvr);
-        $Base = $Base.Replace("[Ref]", $Conn.Ref);
-    }
-    $Base;
-}
-
-function Get-1CConnStringAuth($Conn) { 
-    # Authorization parameters @{Usr, Pwd}.
-    $Auth = ''
-    if (($Conn.File -ne '' -and $Conn.File -ne $null) -or ($Conn.Ref -ne '' -and $Conn.Ref -ne $null)) {
-        $Auth = '/N "[Usr]" /P "[Pwd]"'
-        $Auth = $Auth.Replace("[Usr]", $Conn.Usr)
-        $Auth = $Auth.Replace("[Pwd]", $Conn.Pwd)
-    }
-    $Auth
-}
-
-function Get-1CCRConnString($Conn) {
-    [string]$ConnStr = ''
-    if ($Conn.CRPath -ne '' -and $Conn.CRPath -ne $null) {
-        $ConnStr = '/ConfigurationRepositoryF "[Path]" /ConfigurationRepositoryN "[Usr]" /ConfigurationRepositoryP "[Pwd]"';
-        $ConnStr = $ConnStr.Replace("[Path]", $Conn.CRPath);
-        $ConnStr = $ConnStr.Replace("[Usr]", $Conn.CRUsr);
-        $ConnStr = $ConnStr.Replace("[Pwd]", $Conn.CRPwd);
-    }
-    $ConnStr; 
-}
-
-
-####
-# Auxiliary functions
-####
-
-# Test dir, if not exist then add it.
-function Test-AddDir($Path) {
-    if ($Path -eq $null) {Return}
-    $TestRes = Test-Path -Path $Path
-    if (-not $TestRes) {
-        New-Item -Path $Path -ItemType Directory
-    }
-}
-
-# Log text: 
-function Add-LogText($LogDir, $LogName, $LogMark = '', $LogHead = '', $LogText) {
-    
-    if ($LogText -eq '') {
-        return;
-    };
-    Test-AddDir -Path $LogDir
-
-    $LogDate = Get-Date
-    $LogFile = Add-1CPath -Path $LogDir -AddPath ($LogDate.ToString('yyyyMMdd') + '_' + $LogName + '.log')
-
-    $FullLogText = $LogDate.ToString('yyyy.MM.dd HH:mm:ss');
-    $FullLogText = Add-String -Str $FullLogText -Add $LogMark -Sep ' ';
-    $FullLogText = Add-String -Str $FullLogText -Add $LogHead -Sep '.';
-    $FullLogText = Add-String -Str $FullLogText -Add $LogText -Sep ': ';
-
-    $FullLogText | Out-File -FilePath $LogFile -Append;
-    $FullLogText | Out-Host;
-    $FullLogText
-}
-
-function Add-String([string]$Str, [string]$Add, [string]$Sep = '') {
-    if ($Str -eq '') {$ResStr = $Add}
-    elseif ($Add -eq '') {$ResStr = $Str}
-    else {$ResStr = $Str + $Sep + $Add};
-    $ResStr;
-} 
-
-function Add-RoundSign($Str, $RoundSign) {
-    if ([String]::IsNullOrEmpty($Str)) {return $Str}
-    if (-not $Str.StartsWith($RoundSign)) {$Str = $RoundSign + $Str}
-    if (-not $Str.EndsWith($RoundSign)) {$Str = $Str + $RoundSign}
-    $Str
-}
-
-function Remove-RoundSign([string]$Str, [string]$RoundSign) {
-    if ([String]::IsNullOrEmpty($Str)) {return $Str}
-    $Str.Trim($RoundSign)   
-}
-
-function Add-1CPath([string]$Path, $AddPath, $Sep = '\') {
-    
-    if ([String]::IsNullOrEmpty($AddPath)) {return $Path}
-    if ([String]::IsNullOrEmpty($Path)) {return $AddPath}
-
-    if ($AddPath -is [System.Array]) {
-        foreach ($AddPathItem in $AddPath) {
-            $Path = Add-1CPath -Path $Path -AddPath $AddPathItem -Sep $Sep
-        }
-    }
-    else {
-        if ($Path.EndsWith($Sep)) {
-            $Path = $Path.Substring(0, $Path.Length - 1)
-        }
-
-        if ($AddPath.StartsWith($Sep)) {
-            $AddPath = $AddPath.Substring(1, $Path.Length - 1)
-        }
-        $Path = $Path + $Sep + $AddPath    
-    }
-
-    $Path
-}
-
-function Get-ValueIsEmpty($Value, $AddEmptyValues) {
-    $EmptyValues = ($null, '', 0)
-    ($Value -in $EmptyValues -or $Value -in $AddEmptyValues)
-}
-
-function Get-ValueIfEmpty($Value, $IfEmptyValue, $AddEmptyValues) {
-    if (Get-ValueIsEmpty -Value $Value -AddEmptyValues $AddEmptyValues) {
-        return $IfEmptyValue
-    }
-    $Value
-}
-
-function Get-ValueIfNull($Value, $IfNullValue) {
-    if ($Value -eq $null) {
-        return $IfNullValue
-    }
-    $Value
-}
-
-function Get-1CPropertyValues {
-    param (
-        $Collection,
-        $Property
-    )
-    
-    begin {
-        $ValuesArray = @()
-        if ($Collection -ne $null) {
-            $ValuesArray = ($Collection | Get-1cPropertyValues -Property $Property)
-        }
-    }
-
-    process {
-        if ($_ -is [System.Array]) {
-            $NewValuesArray = ($_ | Get-1cPropertyValues -Property $Property)
-            foreach ($PropertyValue in $NewValuesArray) {
-                if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
-                    $ValuesArray += $PropertyValue
-                }
-            }
-        }
-        elseif ($_ -ne $null) {
-            $PropertyValue = $_.$Property
-            if ($PropertyValue -ne $null -and $PropertyValue -notin $ValuesArray) {
-                $ValuesArray += $PropertyValue
-            }
-        }
-    }
-    end {
-        $ValuesArray
-    }
-}
-
-function Test-1CHashTable ($Object) {
-    if ($Object -eq $null) {return $false}
-    # Is HashTable or OrderedDictionary
-    (($Object -is [hashtable]) -or ($Object -is [System.Object] -and $Object.GetType().name -eq 'OrderedDictionary'))
-}

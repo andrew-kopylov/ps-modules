@@ -96,7 +96,7 @@ function Add-CmnPath($Path, $AddPath, $Sep = '\') {
 
     if ($AddPath -is [System.Array]) {
         foreach ($AddPathItem in $AddPath) {
-            $Path = Add-PgPath -Path $Path -AddPath $AddPathItem -Sep $Sep
+            $Path = Add-CmnPath -Path $Path -AddPath $AddPathItem -Sep $Sep
         }
     }
     else {
@@ -114,9 +114,28 @@ function Add-CmnPath($Path, $AddPath, $Sep = '\') {
 }
 
 function Add-CmnString($Str, $Add, $Sep = '') {
-    if ([String]::IsNullOrEmpty($Str)) {return $Add}
-    elseif ([String]::IsNullOrEmpty($Add)) {return $Str}
-    else {return $Str + $Sep + $Add}
+  
+    $Result = ''
+
+    if ($Add -is [System.Array]) {
+        $Result = $Str
+        foreach ($AddItem in $Add) {
+            $Result = Add-AuxLogString -Str $Result -Add $AddItem -Sep $Sep
+        }
+    }
+    else {
+        if ([String]::IsNullOrEmpty($Str)) {
+            $Result = $Add
+        }
+        elseif ([String]::IsNullOrEmpty($Add)) {
+            $Result = $Str
+        }
+        else {
+            $Result = $Str + $Sep + $Add
+        }
+    }
+
+    $Result
 } 
 
 # WORK WITH ARGUMENTS

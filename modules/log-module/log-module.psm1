@@ -1,4 +1,6 @@
 
+Import-Module common-module
+
 # log-module: version 1.1
 
 # EXPORT
@@ -66,8 +68,8 @@ function Out-Log($Log, $Label, $Text, $OutHost, [switch]$InvokeThrow) {
 
 function Get-AuxLogText($Label, $Text) {
     $FullLogText = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss');
-    $FullLogText = Add-AuxLogString -Str $FullLogText -Add $Label -Sep '.';
-    $FullLogText = Add-AuxLogString -Str $FullLogText -Add $Text -Sep ': ';
+    $FullLogText = Add-CmnString -Str $FullLogText -Add $Label -Sep '.';
+    $FullLogText = Add-CmnString -Str $FullLogText -Add $Text -Sep ': ';
     $FullLogText
 }
 
@@ -112,31 +114,6 @@ function Add-AuxLogPath($Path, $AddPath, $Sep = '\') {
     }
 
     $Path
-}
-
-function Add-AuxLogString($Str, $Add, $Sep = '') {
-    
-    $Result = ''
-
-    if ($Add -is [System.Array]) {
-        $Result = $Str
-        foreach ($AddItem in $Add) {
-            $Result = Add-AuxLogString -Str $Result -Add $AddItem -Sep $Sep
-        }
-    }
-    else {
-        if ([String]::IsNullOrEmpty($Str)) {
-            $Result = $Add
-        }
-        elseif ([String]::IsNullOrEmpty($Add)) {
-            $Result = $Str
-        }
-        else {
-            $Result = $Str + $Sep + $Add
-        }
-    }
-
-    $Result
 }
 
 Export-ModuleMember -Function '*-Log*'
