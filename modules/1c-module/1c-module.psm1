@@ -1397,7 +1397,6 @@ function Invoke-1CProcess {
         $ProcessArgs = Get-1CArgs -TArgs $ProcessArgs -ArgEnter '-' -ValueSep ' ' -ArgSep ' ' -RoundValueSign '"'
     }
 
-
     $ArgList = ''
     $ArgList = Add-CmnString -Str $ArgList -Add $Mode -Sep ' '
     $ArgList = Add-CmnString -Str $ArgList -Add $ConnStr -Sep ' '

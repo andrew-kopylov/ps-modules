@@ -6,10 +6,14 @@ Import-Module common-module
 
 function Get-GitConn {
     param (
-        $Dir
+        $Dir,
+        $Repository,
+        $RefSpec
     )
     $Conn = @{
-        Dir = $Dir
+        Dir = $Dir;
+        Repository = $Repository;
+        RefSpec = $RefSpec;
     }
     $Conn
 }
@@ -68,7 +72,7 @@ function Invoke-GitCommit {
         $Conn,
         [switch]$All,
         [switch]$Amend,
-        $Message,
+        [string]$Message,
         $File,
         $Author,
         $Mail
@@ -80,8 +84,10 @@ function Invoke-GitCommit {
         $File = $null
         if (([string]$Message).Split("`n").Count -gt 1) {
             $FileIsTemp = $true
+            $Message = $Message.Replace("`r", '')
+            $Message = $Message.Replace("`0", '')
             $File = [System.IO.Path]::GetTempFileName()
-            $Message | Out-File -FilePath $File
+            $Message | Out-File -FilePath $File -Encoding utf8 -NoNewline
             $Message = $null
         }
     }
@@ -116,6 +122,14 @@ function Invoke-GitPush {
         [switch]$Verbose,
         $RefSpec
     )
+    
+    if (-not $Repository) {
+        $Repository = $Conn.Repository
+    }
+
+    if (-not $RefSpec) {
+        $RefSpec = $Conn.RefSpec
+    }
 
     $ArgList = [ordered]@{
         all = $All;
@@ -147,6 +161,14 @@ function Invoke-GitPull {
         [switch]$NoFastForward,
         $RefSpec
     )
+
+    if (-not $Repository) {
+        $Repository = $Conn.Repository
+    }
+
+    if (-not $RefSpec) {
+        $RefSpec = $Conn.RefSpec
+    }
 
     $ArgList = [ordered]@{
         all = $All;
@@ -186,11 +208,4 @@ function Invoke-AuxGitCommand {
 }
 
 Export-ModuleMember -Function '*-Git*'
-
-
-
-
-
-
-
 

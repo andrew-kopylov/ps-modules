@@ -1,4 +1,6 @@
 
+# Version 1.0
+
 Import-Module 1c-module
 Import-Module 1c-com-module
 Import-Module slack-module
@@ -23,28 +25,28 @@ function Invoke-1CDevUploadRepositoryToGit {
     Test-CmnDir -Path $DataDir -CreateIfNotExist | Out-Null
 
     # Unbind from CR all the time.
-    Invoke-1CCRUnbindCfg -Conn $Conn -force | Out-Null
-
+    $Return = Invoke-1CCRUnbindCfg -Conn $Conn -force
+    if (-not $Return.OK) {
+        $MsgText = "Ошибка отсоединения конфигурации от хранилища: " + $Result.Out
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.CRUnbindCfg.Error" -Text $MsgText -Level Alert
+        return
+    }
+    
     $DataFile = Add-CmnPath -Path $DataDir -AddPath $ProcessName"Data.json"
     if (Test-Path -Path $DataFile) {
         $ProcessData = Get-Content -Path $DataFile | ConvertFrom-Json
     }
     else {
-        if ($NBegin) {
-            $ProcessData = @{lastUploadedVersion = $NBegin - 1}
-        }
-        else {
-            $ProcessData = @{lastUploadedVersion = 0}
-        }
+        $ProcessData = @{lastUploadedVersion = 0}
     }
 
     $LastUploadedVersion = [int]$ProcessData.lastUploadedVersion
-    if (-not $LastUploadedVersion -and $NBegin) {
-        $LastUploadedVersion = [int]$NBegin - 1
+    if ($LastUploadedVersion -ge $NBegin) {
+        $NBegin = $LastUploadedVersion + 1
     }
 
     Out-Log -Log $Log -Label $ProcessName -Text "Get repository data, last uploaded version $LastUploadedVersion"
-    $RepData = Get-1CDevReportData -Conn $Conn1C -NBegin ($LastUploadedVersion + 1) -Log $Log
+    $RepData = Get-1CDevReportData -Conn $Conn1C -NBegin $NBegin -Log $Log
 
     # Needed 2 new versions as minimum for comparison issues between nearby versions.
     $VersionsCount =  $RepData.Versions.Count
@@ -53,16 +55,20 @@ function Invoke-1CDevUploadRepositoryToGit {
         return
     }
 
-    $Version = $RepData.Versions[$VersionIndex]
-    $Issues = Get-1CDevIssueFromComment -IssuePrefix $IssuePrefix -Comment $Version.Comment
+    $VersionsToCommit = @()
+    $VersionsFirstString = @()
 
     for ($VersionIndex = 0; $VersionIndex -lt ($VersionsCount - 1); ++$VersionIndex) {
         
+        $Version = $RepData.Versions[$VersionIndex]
+        $Issues = Get-1CDevIssueFromComment -IssuePrefix $IssuePrefix -Comment $Version.Comment
+
         $VersionNo = $Version.Version
         $Author = $Version.User
 
         if (-not $Issues.Issues) {
-            Send-1CDevMessage -Messaging $Messaging -Header $ProcessName -Text "Не указан номер задачи в комментарии хранилища: версия $Version, автор $Author"
+            $MsgText = "Не указан номер задачи в комментарии хранилища: версия $VersionNo, автор $Author"
+            Send-1CDevMessage -Messaging $Messaging -Header $ProcessName -Text $MsgText  -Level Alert
             return
         }
         
@@ -73,25 +79,89 @@ function Invoke-1CDevUploadRepositoryToGit {
         $NextAuthor = $Version.User
        
         if (-not $Issues.Issues) {
-            Send-1CDevMessage -Messaging $Messaging -Header $ProcessName -Text "Не указан номер задачи в комментарии хранилища: версия $NextVersion, автор $NextAuthor"
+            $MsgText = "Не указан номер задачи в комментарии хранилища версия $NextVersionNo, автор $NextAuthor"
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.Error" -Text $MsgText -Level Alert
             return
         }
 
-        if ($Issues.Presentation -eq $NextIssues.Presentation) {
+        $VersionsToCommit += $Version
+        $VersionsFirstString += $Issues.FirstString
+
+        if (($Issues.Presentation -eq $NextIssues.Presentation) -and ($Version.User -eq $NextVersion.User)) {
             continue
         }
         
         # Update unbinded configuration from repository.
-        Invoke-1CCRUpdateCfg -Conn $Conn1C -v $VersionNo -force -Log $Log        
+        $Result = Invoke-1CCRUpdateCfg -Conn $Conn1C -v $VersionNo -force -Log $Log
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка обновления версии конфигурации " + $Result.Out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
+            return
+        }
+
+        $ConfigDir = Add-CmnPath -Path $ConnGit.Dir -AddPath config
+        Test-CmnDir -Path $ConfigDir -CreateIfNotExist | Out-Null
+
+        $Result = Invoke-1CDumpCfgToFiles -Conn $Conn1C -FilesDir $ConfigDir -Update -Force
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка выгрузки файлов конфигурации " + $Result.Out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DumpCfgToFiles.Error" -Text $MsgText -Level Alert
+            return
+        }
 
         # git add <all objects>
-        Invoke-GitAdd -Conn $GitConn -PathSpec "*"
+        $Result = Invoke-GitAdd -Conn $GitConn -PathSpec "*"
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка добавлени изменений Git " + $Result.Error
+            Out-Log -Log $Log -Label "$ProcessName.GitAdd.Error" -Text $MsgText
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitAdd.Error" -Text $MsgText -Level Alert
+            return
+        }
+
+        # Commit message
+        if ($VersionsFirstString) {
+            $FirstStrings = $VersionsFirstString | Select-Object -Unique
+            $FirstStrings = [string]::Join(' ', $FirstStrings)
+        }
+        else {
+            $FirstStrings = ''
+        }
+        [string]$CommitMessage = [string]::Join(' ', $Issues.Issues) + ' ' + $FirstStrings
+        if ($CommitMessage.Length -gt 72) {
+            $CommitMessage = $CommitMessage.Substring(1, 72) + '...'
+        }
+        foreach ($CommitVersion in $VersionsToCommit) {
+            $CommitVersionNo = $CommitVersion.Version
+            $CommitVersionUser = $CommitVersion.User
+            $CommitVersionDateTime = $CommitVersion.Date + " " + $CommitVersion.Time
+            $CommitMessage += "`n`n" + "Version: $CommitVersionNo Date: $CommitVersionDateTime User: $CommitVersionUser"
+            $CommitMessage += "`n" + $CommitVersion.Comment
+        }
 
         # git commit
-        Invoke-GitCommit -Conn $GitConn -Message $Version.Comment -Author $Author -Mail "$Author@$EMailDomain"
+        $Result = Invoke-GitCommit -Conn $GitConn -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain"
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка выполнения коммита Git " + $Result.Error
+            Out-Log -Log $Log -Label "$ProcessName.GitCommit.Error" -Text $MsgText
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitCommit.Error" -Text $MsgText -Level Alert
+            return
+        }
 
-        $Version = $NextVersion
-        $Issues = $NextIssues
+        # git push
+        $Result = Invoke-GitPush -Conn $GitConn
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка выполнения пуша Git " + $Result.Error
+            Out-Log -Log $Log -Label "$ProcessName.GitPush.Error" -Text $MsgText
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitPush.Error" -Text $MsgText -Level Alert
+            return
+        }
+
+        # Write process data
+        $ProcessData.LastUploadedVersion = $VersionNo
+        Set-Content -Path $DataFile -Value ($ProcessData | ConvertTo-Json) 
+
+        $VersionsFirstString = @()
+        $VersionsToCommit = @()
 
     }
 
@@ -193,13 +263,231 @@ function Invoke-1CDevSetRepositoryLabelByComment {
 
 function Invoke-1CDevUpdateIBFromRepository {
 
-    # TODO: добавить код модуля обновления конфигурации базы из хранилища
+    param(
+        $Conn,
+        $ConnExt,
+        $BlockDelayMinutes = 5,
+        $BlockPeriodMinutes = 15,
+        [switch]$DynamicUpdate,
+        [switch]$TerminateDesigner,
+        $DesignerOpenHours = 0,
+        $AttemptsOnFailure = 3,
+        $ExternalProcessor = '',
+        $ExecuteTimeout = 0,
+        $Messaging,
+        $Log
+    )
+
+    $ProcessName = "UpdateIBFromRep"
+
+    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.Start" -Text "Начало обновления конфигурации информационной базы" -Log $Log
+
+    $UpdateBeginDate = Get-Date
+
+    # Conneсtion parameters
+    $Conn = Get-1CConn -DisableStartupMessages $true -DisableStartupDialogs $true -Conn $Conn
+
+    if ($ConnExt) {
+        $ConnExt = Get-1CConn -CRPath $ConnExt.CRPath -Extension $ConnExt.Extension -Conn $Conn
+    }
+
+    # Terminate designer seances
+    $IsTerminatedSessions = $false
+    if ($TerminateDesigner) {
+        $DesignerStartedBefore = (Get-date).AddHours(-$DisgnerOpenHours);
+
+        try {
+            $Result = Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -AppID 'Designer' -StartedBefore $DesignerStartedBefore -Log $Log
+            if ($Result.TerminatedSessions.Count -gt 0) {
+                $IsTerminatedSessions = $true
+            }
+        }
+        catch {
+            $MsgText = "Ошибка закрытия сеанса конфигуратора: $_"
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.TreminateDisigner.Error" -Text $MsgText -Level Critical -Log $Log
+            return
+        }
+    }
+    if ($IsTerminatedSessions) {
+        Start-Sleep -Seconds 30
+    }
+
+    # Update configuration from repository.
+    try {
+    
+        $IsRequiredUpdate = $false
+    
+        # Update from config CR
+        $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
+        if ($Result.OK) {
+            if ($Result.ProcessedObjects) {
+                $IsRequiredUpdate = $True
+                $MsgText = "Изменено объектов: " + $Result.ProcessedObjects.Count
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg" -Text $MsgText 
+            }
+        }
+        else {
+            $MsgText = "Ошибка получения изменений конфигурации: " + $Result.out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
+            return
+        }
+
+        # Update extension from CR
+        if ($ConnExt) {
+            $ExtName = $ConnExt.Extension
+            $ResultExt = Invoke-1CCRUpdateCfg -Conn $ConnExt -Log $Log
+            if ($ResultExt.OK) {
+                if ($ResultExt.ProcessedObjects) {
+                    $IsRequiredUpdate = $True
+                    $MsgText = "Изменено объектов расширения ($ExtName): " + $ResultExt.ProcessedObjects.Count
+                    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateExt" -Text $MsgText 
+                }
+            }
+            else {
+                $MsgText = "Ошибка получения изменений расширения ($ExtName): " + $ResultExt.out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateExt.Error" -Text $MsgText -Level Alert
+                return
+            }
+        }
+
+        if (-not $IsRequiredUpdate -and (Test-1CCfChanged -Conn $Conn)) {
+            $IsRequiredUpdate = $True
+        }
+
+    }
+    catch {
+        $MsgText = "Ошибка обновления конфигурации: $_"
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Critical -Log $Log
+        return
+    }
+
+    if (-not $IsRequiredUpdate) {
+        $MsgText = "Не требуется обновление конфигурации информационной базы"
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText -Log $Log
+        return    
+    }
+
+    # Dynamic configuration updating
+    if ($UseDynamicUpdate) {
+        
+        $MsgText = "Запуск динамического обновления конфигурации базы данных..."
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText
+        
+        $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
+        if ((-not $Result.OK) -or (Test-1CCfChanged -Conn $Conn)) {
+            $MsgText = "Ошибка динамического обновления: " + $Result.Out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DynamicUpdate.Error" -Text $MsgText
+        }
+        else {
+            $MsgText = "Динамическое обновление успешно завершено."
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText
+            return
+        }
+    }
+
+    $PermissionCode = 'CfgUpdate-' + (Get-Date).ToString('HHmmss')
+
+    # Block IB for updating
+    $BlockFrom = $UpdateBeginDate.AddMinutes($BlockDelayMinutes)
+    $BlockTo = ($BlockFrom).AddMinutes($BlockPeriodMinutes)
+
+    $MinUpdateMinutes = [int]($BlockPeriodMinutes / 5)
+    $MaxUpdateMinutes = [int]($BlockPeriodMinutes / 3)
+
+    $UpdatePeriodInfo = $BlockFrom.ToString('HH:mm') + " в течении $MinUpdateMinutes-$MaxUpdateMinutes минут."
+
+    $BlockMsg = "Обновление базы в $UpdatePeriodInfo"
+    Set-1CIBSessionsDenied -Conn $Conn -Denied -From $BlockFrom -To $BlockTo -Msg $BlockMsg -PermissionCode $PermissionCode | Out-Null
+
+    $MsgText = "Установлена блокировка базы c $UpdatePeriodInfo"
+    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.SettledBlock" -Text $MsgText -Log $Log
+    Out-Log -Log $Log -Label "$ProcessName.UpdateDelay" -Text "$BlockDelayMinutes min"
+
+    while ((Get-Date) -lt $BlockFrom) {
+        Start-Sleep -Seconds 5
+    }
+
+    # Update database configuration
+    $MsgText = "Запуск обновления базы данных..."
+    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB" -Text $MsgText -Log $Log
+
+    Start-Sleep -Seconds 10 # Waiting for new sessions
+
+    $Conn.UC = $PermissionCode
+    $ConnExt.UC = $PermissionCode
+
+    # Terminate sessions and update IB
+    Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
+    Remove-1CIBConnections -Conn $Conn -Log $Log
+
+    $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+    $ResultExt = @{OK = 1; out = ''}
+    if ($ConnExt) {
+        $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
+    }
+    $IsFailure = (-not $Result.OK) -or (-not $ResultExt.OK) -or (Test-1CCFChanged -Conn $Conn);
+
+    $AttemtsCounter = 1
+    While ($IsFailure) {
+
+        $MsgText = "Ошибка обновления базы данных: " + $Result.out + (Add-CmnString -Add $ResultExt.out -Sep ", ext ")
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB.Error" -Text $MsgText -Log $Log -Level crib
+    
+        $AttemtsCounter++        
+        if ($AttemtsCounter -gt $AttemptsOnFailureCount) {
+            return
+        }
+
+        $TimeSpan = New-TimeSpan -Start Get-Date -End $BlockTo
+        $WaitSecondsToNextAttempt = [int]($TimeSpan.TotalSeconds / ($AttemptsOnFailureCount - $AttemtsCounter + 1))
+        Start-Sleep -Seconds $WaitSecondsToNextAttempt
+
+        # Next attempt updating IB database
+        $MsgText = "Запуск обновления конфигурации базы данных... Попытка $AttemtsCounter из $AttemptsOnFailureCount"
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB" -Text $MsgText -Log $Log
+
+        Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
+        Remove-1CIBConnections -Conn $Conn -Log $Log
+
+        $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Log $Log
+        $ResultExt = @{OK = 1; out = ''}
+        if ($ConnExt) {
+            $ResultExt = Invoke-1CUpdateDBCfg -Conn $ConnExt -Log $Log
+        }
+        $IsFailure = (-not $Result.OK) -or (-not $ResultExt.OK) -or (Test-1CCFChanged -Conn $Conn);
+
+    }
+
+    if ((-not $IsFailure) -and $ExternalProcessor) {
+        $MsgText = "Запуск внешней обработки после обновления: " + (Get-CmnPathBaseName -Path $ExternalProcessor)
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.ExternalProcessor.Run" -Text $MsgText -Log $Log
+        $Result = Invoke-1CExecute -Conn $Conn -ExternalProcessor $ExternalProcessor -Timeout $ExecuteTimeout -Log $Log
+        $IsFailure = (-not $Result.OK)
+        if ($IsFailure) {
+            $MsgText = "Ошибка выполнения обработки данных после обновления конфигурации: " + $Result.Out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.ExternalProcessor.Error" -Text $MsgText -Log $Log -Level Critical
+        }
+    }
+
+    # Unblock IB
+    Set-1CIBSessionsDenied -Conn $Conn | Out-Null
+
+    if ($IsFailure) {
+        $MsgText = "ОШИБКА!!! Обновление НЕ выполнено по причине: " + $Result.out + " " + $Result.msg
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.Error" -Text $MsgText -Log $Log -Level Critical
+    } 
+    else {
+        $MsgText = "Обновление успешно завершено"
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText -Log $Log
+    }
 
 }
 
 function Get-1CDevIssueFromComment([string]$Comment, $IssuePrefix) {
 
     $IssuePattern = Get-1CDevIssuePattern -IssuePrefix $IssuePrefix
+
+    $CommentSrc = $Comment
 
     $IssueNo = @()
     $IssueNumbers = @()
@@ -219,10 +507,17 @@ function Get-1CDevIssueFromComment([string]$Comment, $IssuePrefix) {
         $IssueString = ''
     }
 
+    $FirstStringComment = ""
+    $MatchFirstString =  "$IssuePrefix-\d+\s(?<text>.*)"
+    if ($CommentSrc -match $MatchFirstString) {
+        $FirstStringComment = $Matches.text
+    }
+
     @{
         Issues = $IssueNo;
         Numbers = $IssueNumbers;
         Presentation = $IssueString;
+        FirstString = $FirstStringComment
     }
 }
 
@@ -296,17 +591,17 @@ function ConvertFrom-1CCRReport {
     }
 
     $RepParams = @{
-        CRPath = 'Отчет по версиям хранилища';
-        RepDate = 'Дата отчета';
-        RepTime = 'Время отчета';
-        Version = 'Версия';
-        User = 'Пользователь';
-        CreateDate = 'Дата создания';
-        CreateTime = 'Время создания';
-        Comment = 'Комментарий';
-        Added = 'Добавлены';
-        Changed = 'Изменены';
-        Deleted = 'Удалены';
+        CRPath = @('Отчет по версиям хранилища', 'Repository Versions Report');
+        RepDate = @('Дата отчета', 'Report date');
+        RepTime = @('Время отчета', 'Report time');
+        Version = @('Версия', 'Version');
+        User = @('Пользователь', 'User');
+        CreateDate = @('Дата создания', 'Creation date');
+        CreateTime = @('Время создания', 'Creation time');
+        Comment = @('Комментарий', 'Comment');
+        Added = @('Добавлены', 'Added');
+        Changed = @('Изменены', 'Changed');
+        Deleted = @('Удалены', 'Deleted');
     }
 
     $Report = New-Object PSCustomObject -Property @{
@@ -434,7 +729,7 @@ function ConvertFrom-1CCRReport {
             if ($ParamName -eq '') {
                 continue;
             }
-            elseif ($ParamName -eq $RepParams.Version) {
+            elseif ($ParamName -in $RepParams.Version) {
                 
                 if ($Version -ne $null) {
                     $Report.Versions += $Version
@@ -453,20 +748,20 @@ function ConvertFrom-1CCRReport {
                 $Version.Version = $ParamValue
 
             }
-            elseif ($ParamName -eq $RepParams.User) {
+            elseif ($ParamName -in $RepParams.User) {
                 $Version.User = $ParamValue.Trim();
             }
-            elseif ($ParamName -eq $RepParams.CreateDate) {
+            elseif ($ParamName -in $RepParams.CreateDate) {
                 $Version.Date = $ParamValue.Trim();
             }
-            elseif ($ParamName -eq $RepParams.CreateTime) {
+            elseif ($ParamName -in $RepParams.CreateTime) {
                 $Version.Time = $ParamValue.Trim();
                 if (-not $IsConvertedFromMXL) {
                     # Init comment reading after CreateTime string
                     $Comment = '' 
                 }
             }
-            elseif ($ParamName -eq $RepParams.Comment) {
+            elseif ($ParamName -in $RepParams.Comment) {
                 $Comment = [string]$ParamValue
                 if ([String]::IsNullOrWhiteSpace($Comment)) {
                     $Comment = $null
@@ -486,22 +781,22 @@ function ConvertFrom-1CCRReport {
                     }
                 }
             }
-            elseif ($ParamName -eq $RepParams.Added) {
+            elseif ($ParamName -in $RepParams.Added) {
                 [String[]]$Added = @($ParamValue)
             }
-            elseif ($ParamName -eq $RepParams.Changed) {
+            elseif ($ParamName -in $RepParams.Changed) {
                 [String[]]$Changed = @($ParamValue)
             }
-            elseif ($ParamName -eq $RepParams.Deleted) {
+            elseif ($ParamName -in $RepParams.Deleted) {
                 [String[]]$Deleted = @($ParamValue)
             }
-            elseif ($ParamName -eq $RepParams.CRPath) {
+            elseif ($ParamName -in $RepParams.CRPath) {
                 $Report.CRPath = $ParamValue.Trim();
             }
-            elseif ($ParamName -eq $RepParams.RepDate) {
+            elseif ($ParamName -in $RepParams.RepDate) {
                 $Report.RepDate = $ParamValue.Trim();
             }
-            elseif ($ParamName -eq $RepParams.RepTime) {
+            elseif ($ParamName -in $RepParams.RepTime) {
                 $Report.RepTime = $ParamValue.Trim();
             }
         }
@@ -549,17 +844,21 @@ function Convert-1CMXLtoTXT($ComConn, $MXLFile, $TXTFile) {
 
 function Get-1CDevMessaging {
     param (
-        $Host,
         $Project,
+        $Host,
+        $Service,
+        $Path,
         $SlackHook,
         $SlackAlertHook,
         $SlackCriticalHook
     )
     @{
-        Host = $Host;
         Project = $Project;
+        Host = $Host;
+        Service = $Service
+        Path = $Path
         SlackHook = $SlackHook;
-        SlackAlert = $SlackAlertHook;
+        SlackAlertHook = $SlackAlertHook;
         SlackCriticalHook = $SlackCriticalHook;
     }
 }
@@ -570,23 +869,33 @@ function Send-1CDevMessage {
         $Header,
         $Text,
         [ValidateSet('Info', 'Alert', 'Critical')]
-        $Level
+        $Level,
+        $Log
     )
+
+    if ($Log) {
+        Out-Log -Log $Log -Label $Header -Text $Text
+    }
 
     if ($Messaging -eq $null) {
         return
     }
 
-    $Header = Add-CmnString -Add $Messaging.Projext, $Messaging.Host, $Header -Sep ' - '
+    $ProjectHost = Add-CmnString -Add $Messaging.Project, $Messaging.Host, $Messaging.Service, $Messaging.Path -Sep ' - '
+
+    if ($Messaging.SlackHook -or $Messaging.SlackAlertHook -or $Messaging.SlackCriticalHook) {
+        $SlackHeader = Add-CmnString -Str $ProjectHost -Add (Get-SlackFormat -Text $Header -Italic) -Sep ": "
+    }
+
 
     if ($Level -eq 'Alert') {
 
         # Alert hook
         if ($Messaging.SlackAlertHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji bangbang 
         }
         elseif ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji bangbang
         }
 
     }
@@ -594,13 +903,13 @@ function Send-1CDevMessage {
 
         # Critical hook
         if ($Messaging.SlackCriticalHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackCriticalHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackCriticalHook -Text $Text -Header $SlackHeader -Emoji boom
         }
         elseif ($Messaging.SlackAlertHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji boom
         }
         elseif ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji boom
         }
 
     }
@@ -608,7 +917,7 @@ function Send-1CDevMessage {
 
         # Info hook
         if ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $Header
+            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji information_source
         }
 
     }
