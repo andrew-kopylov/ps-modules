@@ -1,3 +1,4 @@
 # Ignore check files
 *.check-config.txt
 *.log
+scripts-1c/config/config.json

@@ -968,7 +968,9 @@ function Get-1CCRProcessedObjectsOut([string]$OutText) {
     $Result = @{Objects = @(); OK = 1; Msg = ''};
 
     $CRBeginText = "Начало операции с хранилищем конфигурации";
+    $CRBeginTextEn = "Starting operation with the configuration repository";
     $CREndText = "Операция с хранилищем конфигурации завершена";
+    $CREndTextEn = "The operation with the configuration repository completed";
 
     $OutTextArr = $OutText.Split("`n");
     if ($OutTextArr.Count -lt 2) {
@@ -976,15 +978,18 @@ function Get-1CCRProcessedObjectsOut([string]$OutText) {
         $Result.Msg = "Не ожиданный ответ конфигуратора."
     }
     elseif ($OutTextArr.Get(0).Contains($CRBeginText) -and $OutTextArr.Get(1).Contains($CREndText)) {
-        $Result.Msg = "Нет изменений в хранилище.";
+        $Result.Msg = "Нет изменений в хранилище."
+    }
+    elseif ($OutTextArr.Get(0).Contains($CRBeginTextEn) -and $OutTextArr.Get(1).Contains($CREndTextEn)) {
+        $Result.Msg = "No changes in the repository."
     }
     else {
         $IsObject = $false
         foreach ($TextStr in $OutTextArr) {
-            if ($TextStr.Contains($CRBeginText)) {
+            if ($TextStr.Contains($CRBeginText) -or $TextStr.Contains($CRBeginTextEn)) {
                 $IsObject = $true;
             }
-            elseif ($TextStr.Contains($CREndText)) {
+            elseif ($TextStr.Contains($CREndText) -or $TextStr.Contains($CREndTextEn)) {
                 $IsObject = $false;
             }
             elseif ($IsObject -and $TextStr.Contains(':')) {

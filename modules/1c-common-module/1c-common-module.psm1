@@ -174,7 +174,7 @@ function Get-1CV8VerInfo($V8) {
         $V8Dir = $V8Dir32
     }
     else {
-        if (Test-Path -Path $V8Dir64) {
+        if (Test-Path -Path "$V8Dir64\$V8Ver") {
             $V8Dir = $V8Dir64
         }
         else {
