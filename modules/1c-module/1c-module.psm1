@@ -889,6 +889,10 @@ function Invoke-1CCRReport {
         $Log
     )
 
+    $ProccessName = "CRReport"
+
+    Out-Log -Log $Log  -Label "$ProccessName.Start" -Text "Файл отчета $ReportFile, начальная версия '$NBegin', конечная версия '$NEnd'"
+
     $ProcessArgs = '/ConfigurationRepositoryReport "[ReportFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[ReportFile]', $ReportFile);
 
@@ -900,7 +904,7 @@ function Invoke-1CCRReport {
     }
     $ProcessArgs = Get-1CArgs -TArgs $TArgs -ArgsStr $ProcessArgs -ArgEnter '-'
 
-    Invoke-1CProcess -Conn $Conn -ProcessName 'CRReport' -ProcessArgs $ProcessArgs -Log $Log
+    Invoke-1CProcess -Conn $Conn -ProcessName $ProccessName -ProcessArgs $ProcessArgs -Log $Log
 }
 
 function Invoke-1CCROptimizeData ($Conn, $Log) {

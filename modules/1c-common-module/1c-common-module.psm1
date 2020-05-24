@@ -7,8 +7,14 @@ Import-Module log-module
 ####
 
 # Platform parameters {Ver, Cat}.
-function Get-1CV8($Ver = '', $Dir = '') {
-    @{Ver = $Ver; Dir = $Dir}
+function Get-1CV8 {
+    param (
+        $Ver = '',
+        $Dir = '',
+        [ValidateSet('x32', 'x64')]
+        $Arch
+    )
+    @{Ver = $Ver; Dir = $Dir; Arch = $Arch}
 }
 
 # Base connection parameters.
@@ -33,7 +39,7 @@ function Get-1CConn {
         $ClPwd,
         $Visible,
         $DisableStartupMessages,
-        $DisableStartupDialogs,
+        $DisableStartupDialogs = $True,
         $Local,
         $VLocal,
         $Timeout,
@@ -146,26 +152,29 @@ function Get-1CV8VerInfo($V8) {
     if ($V8 -eq $null) {
         $V8Dir = ''
         $V8Ver = ''
+        $V8Arch = ''
     }
     elseif ($V8 -is [string]) {
         $V8Dir = ''
         $V8Ver = $V8
+        $V8Arch = ''
     }
     else {
         $V8Dir = $V8.Dir     
         $V8Ver = $V8.Ver
+        $V8Arch = $V8.Arch
     }
 
     $V8Dir32 = 'C:\Program Files (x86)\1cv8'
     $V8Dir64 = 'C:\Program Files\1cv8'
 
-    if ($V8Dir -eq 'x64') {
+    if ('x64' -in @($V8Dir, $V8Arch)) {
         $V8Dir = $V8Dir64
     }
-    elseif ($V8Dir -eq 'x32') {
+    elseif ('x32' -in @($V8Dir, $V8Arch)) {
         $V8Dir = $V8Dir32
     }
-    if ($V8Ver -eq 'x64') {
+    elseif ($V8Ver -eq 'x64') {
         $V8Ver = ''
         $V8Dir = $V8Dir64
     }
@@ -183,9 +192,8 @@ function Get-1CV8VerInfo($V8) {
     }
 
     if ($V8Ver -eq '' -or $V8Ver -eq $null) {
-        # Seach last version.
-        $DirMask = Add-1CPath -Path $V8Dir -AddPath ('*.*.*.*')
-        $LastVerDir = Get-ChildItem -Path $DirMask -Directory | Sort-Object -Property 'Name' | Select-Object -Last 1
+        $DirMask = Add-CmnPath -Path $V8Dir -AddPath "*.*.*.*"
+        $LastVerDir = Get-ChildItem -Path $DirMask -Directory | Sort-Object -Property BaseName | Select-Object -Last 1
         $V8Ver = $LastVerDir.Name
         $V8Dir = $LastVerDir.Parent.FullName
     }

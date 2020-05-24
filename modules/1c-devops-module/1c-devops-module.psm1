@@ -14,6 +14,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $NBegin,
         $IssuePrefix,
         $EMailDomain,
+        [switch]$PushRemote,
         $Messaging,
         $Log
     )
@@ -25,8 +26,8 @@ function Invoke-1CDevUploadRepositoryToGit {
     Test-CmnDir -Path $DataDir -CreateIfNotExist | Out-Null
 
     # Unbind from CR all the time.
-    $Return = Invoke-1CCRUnbindCfg -Conn $Conn -force
-    if (-not $Return.OK) {
+    $Result = Invoke-1CCRUnbindCfg -Conn $Conn -force
+    if (-not $Result.OK) {
         $MsgText = "Ошибка отсоединения конфигурации от хранилища: " + $Result.Out
         Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.CRUnbindCfg.Error" -Text $MsgText -Level Alert
         return
@@ -112,7 +113,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         # git add <all objects>
         $Result = Invoke-GitAdd -Conn $GitConn -PathSpec "*"
         if (-not $Result.OK) {
-            $MsgText = "Ошибка добавлени изменений Git " + $Result.Error
+            $MsgText = "Ошибка добавления изменений Git " + $Result.Error
             Out-Log -Log $Log -Label "$ProcessName.GitAdd.Error" -Text $MsgText
             Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitAdd.Error" -Text $MsgText -Level Alert
             return
@@ -148,12 +149,14 @@ function Invoke-1CDevUploadRepositoryToGit {
         }
 
         # git push
-        $Result = Invoke-GitPush -Conn $GitConn
-        if (-not $Result.OK) {
-            $MsgText = "Ошибка выполнения пуша Git " + $Result.Error
-            Out-Log -Log $Log -Label "$ProcessName.GitPush.Error" -Text $MsgText
-            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitPush.Error" -Text $MsgText -Level Alert
-            return
+        if ($PushRemote) {
+            $Result = Invoke-GitPush -Conn $GitConn
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка выполнения пуша Git " + $Result.Error
+                Out-Log -Log $Log -Label "$ProcessName.GitPush.Error" -Text $MsgText
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitPush.Error" -Text $MsgText -Level Alert
+                return
+            }
         }
 
         # Write process data
