@@ -673,7 +673,8 @@ function Invoke-1CCRBindCfg {
 function Invoke-1CCRUnbindCfg {
     param(
         $Conn,
-        [switch]$force
+        [switch]$force,
+        $Log
     )
 
     #/ConfigurationRepositoryUnbindCfg [-Extension <имя расширения>] [-force]

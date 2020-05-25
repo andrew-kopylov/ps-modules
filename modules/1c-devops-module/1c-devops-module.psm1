@@ -26,7 +26,7 @@ function Invoke-1CDevUploadRepositoryToGit {
     Test-CmnDir -Path $DataDir -CreateIfNotExist | Out-Null
 
     # Unbind from CR all the time.
-    $Result = Invoke-1CCRUnbindCfg -Conn $Conn -force
+    $Result = Invoke-1CCRUnbindCfg -Conn $Conn1C -force -Log $Log
     if (-not $Result.OK) {
         $MsgText = "Ошибка отсоединения конфигурации от хранилища: " + $Result.Out
         Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.CRUnbindCfg.Error" -Text $MsgText -Level Alert
@@ -103,7 +103,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $ConfigDir = Add-CmnPath -Path $ConnGit.Dir -AddPath config
         Test-CmnDir -Path $ConfigDir -CreateIfNotExist | Out-Null
 
-        $Result = Invoke-1CDumpCfgToFiles -Conn $Conn1C -FilesDir $ConfigDir -Update -Force
+        $Result = Invoke-1CDumpCfgToFiles -Conn $Conn1C -FilesDir $ConfigDir -Update -Force -Log $Log
         if (-not $Result.OK) {
             $MsgText = "Ошибка выгрузки файлов конфигурации " + $Result.Out
             Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DumpCfgToFiles.Error" -Text $MsgText -Level Alert
@@ -111,6 +111,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         }
 
         # git add <all objects>
+        Out-Log -Log $Log -Label "$ProcessName.GitAdd.Start"
         $Result = Invoke-GitAdd -Conn $GitConn -PathSpec "*"
         if (-not $Result.OK) {
             $MsgText = "Ошибка добавления изменений Git " + $Result.Error
@@ -129,7 +130,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         }
         [string]$CommitMessage = [string]::Join(' ', $Issues.Issues) + ' ' + $FirstStrings
         if ($CommitMessage.Length -gt 72) {
-            $CommitMessage = $CommitMessage.Substring(1, 72) + '...'
+            $CommitMessage = $CommitMessage.Substring(0, 72) + '...'
         }
         foreach ($CommitVersion in $VersionsToCommit) {
             $CommitVersionNo = $CommitVersion.Version
@@ -140,6 +141,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         }
 
         # git commit
+        Out-Log -Log $Log -Label "$ProcessName.GitCommit.Start"
         $Result = Invoke-GitCommit -Conn $GitConn -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain"
         if (-not $Result.OK) {
             $MsgText = "Ошибка выполнения коммита Git " + $Result.Error
@@ -150,6 +152,7 @@ function Invoke-1CDevUploadRepositoryToGit {
 
         # git push
         if ($PushRemote) {
+            Out-Log -Log $Log -Label "$ProcessName.GitPush.Start"
             $Result = Invoke-GitPush -Conn $GitConn
             if (-not $Result.OK) {
                 $MsgText = "Ошибка выполнения пуша Git " + $Result.Error
@@ -157,6 +160,9 @@ function Invoke-1CDevUploadRepositoryToGit {
                 Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.GitPush.Error" -Text $MsgText -Level Alert
                 return
             }
+        }
+        else {
+            Out-Log -Log $Log -Label "$ProcessName.GitPush.Escape"
         }
 
         # Write process data
@@ -417,7 +423,9 @@ function Invoke-1CDevUpdateIBFromRepository {
     Start-Sleep -Seconds 10 # Waiting for new sessions
 
     $Conn.UC = $PermissionCode
-    $ConnExt.UC = $PermissionCode
+    if ($ConnExt) {
+        $ConnExt.UC = $PermissionCode
+    }
 
     # Terminate sessions and update IB
     Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
