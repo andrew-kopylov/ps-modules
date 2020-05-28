@@ -15,6 +15,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $IssuePrefix,
         $EMailDomain,
         [switch]$PushRemote,
+        [switch]$Unbind1CCR,
         $Messaging,
         $Log
     )
@@ -24,26 +25,34 @@ function Invoke-1CDevUploadRepositoryToGit {
     Out-Log -Log $Log -Label $ProcessName -Text "Start"
 
     Test-CmnDir -Path $DataDir -CreateIfNotExist | Out-Null
-
-    # Unbind from CR all the time.
-    $Result = Invoke-1CCRUnbindCfg -Conn $Conn1C -force -Log $Log
-    if (-not $Result.OK) {
-        $MsgText = "Ошибка отсоединения конфигурации от хранилища: " + $Result.Out
-        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.CRUnbindCfg.Error" -Text $MsgText -Level Alert
-        return
-    }
     
     $DataFile = Add-CmnPath -Path $DataDir -AddPath $ProcessName"Data.json"
     if (Test-Path -Path $DataFile) {
         $ProcessData = Get-Content -Path $DataFile | ConvertFrom-Json
     }
     else {
-        $ProcessData = @{lastUploadedVersion = 0}
+        $ProcessData = @{
+            lastUploadedVersion = 0;
+            lastUpdatedCfgVersion = 0;
+            lastDumpedFilesVerison = 0;
+        }
     }
-
     $LastUploadedVersion = [int]$ProcessData.lastUploadedVersion
+    $LastUpdatedCfgVersion = [int]$ProcessData.lastUpdatedCfgVersion
+    $LastDumpedFilesVerison = [int]$ProcessData.lastDumpedFilesVerison
+
     if ($LastUploadedVersion -ge $NBegin) {
         $NBegin = $LastUploadedVersion + 1
+    }
+
+    # Unbind from CR all the time.
+    if ($Unbind1CCR -or (-not $LastUploadedVersion)) {
+        $Result = Invoke-1CCRUnbindCfg -Conn $Conn1C -force -Log $Log
+        if (-not $Result.OK) {
+            $MsgText = "Ошибка отсоединения конфигурации от хранилища: " + $Result.Out
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.CRUnbindCfg.Error" -Text $MsgText -Level Alert
+            return
+        }
     }
 
     Out-Log -Log $Log -Label $ProcessName -Text "Get repository data, last uploaded version $LastUploadedVersion"
@@ -64,7 +73,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $Version = $RepData.Versions[$VersionIndex]
         $Issues = Get-1CDevIssueFromComment -IssuePrefix $IssuePrefix -Comment $Version.Comment
 
-        $VersionNo = $Version.Version
+        $VersionNo = [int]$Version.Version
         $Author = $Version.User
 
         if (-not $Issues.Issues) {
@@ -76,7 +85,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $NextVersion = $RepData.Versions[$VersionIndex + 1]
         $NextIssues = Get-1CDevIssueFromComment -IssuePrefix $IssuePrefix -Comment $NextVersion.Comment
 
-        $NextVersionNo = $NextVersion.Version
+        $NextVersionNo = [int]$NextVersion.Version
         $NextAuthor = $Version.User
        
         if (-not $Issues.Issues) {
@@ -91,28 +100,51 @@ function Invoke-1CDevUploadRepositoryToGit {
         if (($Issues.Presentation -eq $NextIssues.Presentation) -and ($Version.User -eq $NextVersion.User)) {
             continue
         }
+
+        $VersionIssuesNo = [string]::Join(' ', $Issues.Issues)
+        $VersionDateTime = $Version.Date + " " + $Version.Time
+        $MsgText = "Version - $VersionNo, Date - $VersionDateTime, User - $Author, Issue $VersionIssuesNo"
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UploadVersion" -Text $MsgText -Log $Log
         
-        # Update unbinded configuration from repository.
-        $Result = Invoke-1CCRUpdateCfg -Conn $Conn1C -v $VersionNo -force -Log $Log
-        if (-not $Result.OK) {
-            $MsgText = "Ошибка обновления версии конфигурации " + $Result.Out
-            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
-            return
+        if ($LastUpdatedCfgVersion -ne $VersionNo) {
+            # Update unbinded configuration from repository.
+            $Result = Invoke-1CCRUpdateCfg -Conn $Conn1C -v $VersionNo -force -Log $Log
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка обновления версии конфигурации " + $Result.Out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
+                return
+            }
+            # Write process data
+            $LastUpdatedCfgVersion = $VersionNo
+            $ProcessData.lastUpdatedCfgVersion = $VersionNo
+            Set-Content -Path $DataFile -Value ($ProcessData | ConvertTo-Json) 
+        }
+        else {
+            Out-Log -Log $Log -Label "$ProcessName.UpdateCfg.Skipped" -Text "Конфигурация уже обновлена до версии хранилища $VersionNo"
         }
 
         $ConfigDir = Add-CmnPath -Path $ConnGit.Dir -AddPath config
         Test-CmnDir -Path $ConfigDir -CreateIfNotExist | Out-Null
 
-        $Result = Invoke-1CDumpCfgToFiles -Conn $Conn1C -FilesDir $ConfigDir -Update -Force -Log $Log
-        if (-not $Result.OK) {
-            $MsgText = "Ошибка выгрузки файлов конфигурации " + $Result.Out
-            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DumpCfgToFiles.Error" -Text $MsgText -Level Alert
-            return
+        if ($LastDumpedFilesVerison -ne $VersionNo) {
+            $Result = Invoke-1CDumpCfgToFiles -Conn $Conn1C -FilesDir $ConfigDir -Update -Log $Log
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка выгрузки файлов конфигурации " + $Result.Out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DumpCfgToFiles.Error" -Text $MsgText -Level Alert
+                return
+            }
+            # Write process data
+            $LastDumpedFilesVerison = $VersionNo
+            $ProcessData.lastDumpedFilesVerison = $VersionNo
+            Set-Content -Path $DataFile -Value ($ProcessData | ConvertTo-Json) 
+        }
+        else {
+            Out-Log -Log $Log -Label "$ProcessName.DumpCfgToFiles.Skipped" -Text "Конфигурация уже выгружена в файлы версии хранилища $VersionNo"
         }
 
         # git add <all objects>
-        Out-Log -Log $Log -Label "$ProcessName.GitAdd.Start"
-        $Result = Invoke-GitAdd -Conn $GitConn -PathSpec "*"
+        Out-Log -Log $Log -Label "$ProcessName.GitAdd.Start" -Text ""
+        $Result = Invoke-GitAdd -Conn $ConnGit -PathSpec "*"
         if (-not $Result.OK) {
             $MsgText = "Ошибка добавления изменений Git " + $Result.Error
             Out-Log -Log $Log -Label "$ProcessName.GitAdd.Error" -Text $MsgText
@@ -128,7 +160,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         else {
             $FirstStrings = ''
         }
-        [string]$CommitMessage = [string]::Join(' ', $Issues.Issues) + ' ' + $FirstStrings
+        $CommitMessage = "$VersionIssuesNo ver.$VersionNo - $VersionDateTime $FirstStrings"
         if ($CommitMessage.Length -gt 72) {
             $CommitMessage = $CommitMessage.Substring(0, 72) + '...'
         }
@@ -140,9 +172,11 @@ function Invoke-1CDevUploadRepositoryToGit {
             $CommitMessage += "`n" + $CommitVersion.Comment
         }
 
+        $CommitMessage | Out-Host
+
         # git commit
         Out-Log -Log $Log -Label "$ProcessName.GitCommit.Start"
-        $Result = Invoke-GitCommit -Conn $GitConn -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain"
+        $Result = Invoke-GitCommit -Conn $ConnGit -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain"
         if (-not $Result.OK) {
             $MsgText = "Ошибка выполнения коммита Git " + $Result.Error
             Out-Log -Log $Log -Label "$ProcessName.GitCommit.Error" -Text $MsgText
@@ -153,7 +187,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         # git push
         if ($PushRemote) {
             Out-Log -Log $Log -Label "$ProcessName.GitPush.Start"
-            $Result = Invoke-GitPush -Conn $GitConn
+            $Result = Invoke-GitPush -Conn $ConnGit
             if (-not $Result.OK) {
                 $MsgText = "Ошибка выполнения пуша Git " + $Result.Error
                 Out-Log -Log $Log -Label "$ProcessName.GitPush.Error" -Text $MsgText
@@ -510,6 +544,7 @@ function Get-1CDevIssueFromComment([string]$Comment, $IssuePrefix) {
         $Comment = ($Comment -replace $ReplacePattern, '\.')
     }
 
+    $IssueNo = $IssueNo | Sort
     $IssueNumbers = $IssueNumbers | Sort
     if ($IssueNumbers) {
         $IssueString = $IssuePrefix + '-' + [String]::Join(',', $IssueNumbers)

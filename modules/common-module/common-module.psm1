@@ -163,6 +163,15 @@ function Add-CmnArgValueQuotes([string]$Value, $Quote = '"') {
     $Value
 }
 
+function Test-CmnContainsIn($String, $Substrings) {
+    foreach ($Substr in $Substrings) {
+        if ($String.Contains($Substr)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 
 ####
 # AUXILIARY FUNC

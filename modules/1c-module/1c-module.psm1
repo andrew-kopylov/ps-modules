@@ -693,6 +693,15 @@ function Invoke-1CCRUpdateCfg($Conn, $v, $Revised, [switch]$force, $Objects, [sw
     $ProcessName = 'CRUpdateCfg'
     $ObjectsCommand = 'ConfigurationRepositoryUpdateCfg'
 
+    if ($v) {
+        $LogText = "version $v"
+    }
+    else {
+        $LogText = "last version"
+    }
+
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start" -LogText $LogText
+
     $AddCmd = Get-1CArgs -TArgs @{v = $v; revised = $Revised; force = $force} -ArgEnter '-'
     Invoke-1CCRObjectsCommand -Conn $Conn -ProcessName $ProcessName -ObjectsCommand $ObjectsCommand -Objects $Objects -includeChildObjectsAll:$includeChildObjectsAll -AddCmd $AddCmd -Log $Log
 }
@@ -707,7 +716,7 @@ function Invoke-1CCRDumpCfg($Conn, $CfgFile, $v, $Log) {
 
     Test-CmnDir -Path ([System.IO.Path]::GetDirectoryName($CfgFile)) -CreateIfNotExist
 
-    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText ('version ' + $v + ' - ' + $CfgFile)
+    Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "Start.CfgFile" -LogText "version $v - $CfgFile"
     
     $ProcessArgs = Get-1CArgs -TArgs @{v = $v} -ArgEnter '-' -ArgsStr $ProcessArgs
     $Result = Invoke-1CProcess -ProcessName $ProcessName -ProcessArgs $ProcessArgs -Conn $Conn -Log $Log
@@ -892,7 +901,27 @@ function Invoke-1CCRReport {
 
     $ProccessName = "CRReport"
 
-    Out-Log -Log $Log  -Label "$ProccessName.Start" -Text "Файл отчета $ReportFile, начальная версия '$NBegin', конечная версия '$NEnd'"
+    $MsgText = "Файл отчета $ReportFile"
+    if ($NBegin -or $NEnd) {
+        if ($NBegin) {
+            $MsgText = $MsgText + ", начиная с версии $NBegin"
+        }
+        else {
+            $MsgText = $MsgText + ", начиная с версии 1"
+        }
+        if ($NEnd) {
+            $MsgText = $MsgText + ", заканчивая версией версии $NEnd"
+        }
+        else {
+            $MsgText = $MsgText + ", до последней версии"
+        }
+    }
+    else {
+        $MsgText = $MsgText + ", полная история хранилища"
+
+    }
+
+    Out-Log -Log $Log  -Label "$ProccessName.Start" -Text $MsgText
 
     $ProcessArgs = '/ConfigurationRepositoryReport "[ReportFile]"';
     $ProcessArgs = $ProcessArgs.Replace('[ReportFile]', $ReportFile);
@@ -972,29 +1001,31 @@ function Get-1CCRProcessedObjectsOut([string]$OutText) {
 
     $Result = @{Objects = @(); OK = 1; Msg = ''};
 
-    $CRBeginText = "Начало операции с хранилищем конфигурации";
-    $CRBeginTextEn = "Starting operation with the configuration repository";
-    $CREndText = "Операция с хранилищем конфигурации завершена";
-    $CREndTextEn = "The operation with the configuration repository completed";
+    $CRUpdateSuccess = @("Обновление конфигурации из хранилища успешно завершено", "Configuration successfully updated from repository")
+    $CRBeginText = @("Начало операции с хранилищем конфигурации", "Starting operation with the configuration repository")
+    $CREndText = @("Операция с хранилищем конфигурации завершена", "The operation with the configuration repository completed")
 
     $OutTextArr = $OutText.Split("`n");
     if ($OutTextArr.Count -lt 2) {
-        $Result.OK = 0
-        $Result.Msg = "Не ожиданный ответ конфигуратора."
+        if (Test-CmnContainsIn -String $OutTextArr.Get(0) -Substrings $CRUpdateSuccess) {
+            $Result.Msg = $OutTextArr.Get(0)
+        }
+        else {
+            $Result.OK = 0
+            $Result.Msg = "Не ожиданный ответ конфигуратора."
+        }
     }
-    elseif ($OutTextArr.Get(0).Contains($CRBeginText) -and $OutTextArr.Get(1).Contains($CREndText)) {
-        $Result.Msg = "Нет изменений в хранилище."
-    }
-    elseif ($OutTextArr.Get(0).Contains($CRBeginTextEn) -and $OutTextArr.Get(1).Contains($CREndTextEn)) {
+    elseif ((Test-CmnContainsIn -String $OutTextArr.Get(0) -Substrings $CRBeginText) `
+        -and (Test-CmnContainsIn -String $OutTextArr.Get(1) -Substrings $CREndText)) {
         $Result.Msg = "No changes in the repository."
     }
     else {
         $IsObject = $false
         foreach ($TextStr in $OutTextArr) {
-            if ($TextStr.Contains($CRBeginText) -or $TextStr.Contains($CRBeginTextEn)) {
+            if (Test-CmnContainsIn -String $TextStr -Substrings $CRBeginText) {
                 $IsObject = $true;
             }
-            elseif ($TextStr.Contains($CREndText) -or $TextStr.Contains($CREndTextEn)) {
+            elseif (Test-CmnContainsIn -String $TextStr -Substrings $CREndText) {
                 $IsObject = $false;
             }
             elseif ($IsObject -and $TextStr.Contains(':')) {
@@ -1034,7 +1065,7 @@ function Invoke-1CCRObjectsCommand($Conn, $ProcessName, $ObjectsCommand, $Object
     # Changed objects.
     $ProcessObjectResult = Get-1CCRProcessedObjectsOut -OutText $Result.Out;
     if ($ProcessObjectResult.OK -ne 1) {
-        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText -$ProcessObjectResult.Msg -Result $Result -OK 0
+        Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText $ProcessObjectResult.Msg -Result $Result -OK 0
         return $Result
     }
     Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead "ProcessedObjects.Msg" -LogText $ProcessObjectResult.Msg -Result $Result
@@ -1482,17 +1513,19 @@ function Invoke-1CProcess {
         $End = Get-Date
     }
 
-    if ($Process.ExitCode -ne 0) {
+    if ($Process.ExitCode) {
         $Msg = 'Exit code ' + $Process.ExitCode.ToString()
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Error' -LogText $Msg
     }
 
     if (-not $TimeoutExceeded) {
 
-        $DumpValue = Get-Content -Path $Dump -Raw
+        [string]$DumpValue = Get-Content -Path $Dump -Raw
+        $DumpValue = $DumpValue.Trim()
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'DumpResult' -LogText $DumpValue
 
-        $OutValue = Get-Content -Path $Out -Raw
+        [string]$OutValue = Get-Content -Path $Out -Raw
+        $OutValue = $OutValue.Trim()
         Add-1CLog -Log $Log -ProcessName $ProcessName -LogHead 'Out' -LogText $OutValue
     
         Remove-1CResultDump -DumpFile $Dump
