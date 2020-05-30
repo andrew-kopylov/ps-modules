@@ -123,6 +123,8 @@ function Invoke-1CDevUploadRepositoryToGit {
             Out-Log -Log $Log -Label "$ProcessName.UpdateCfg.Skipped" -Text "Конфигурация уже обновлена до версии хранилища $VersionNo"
         }
 
+        (Get-Date).ToString("yyyyMMddhhmmss") | Out-File -FilePath (Add-CmnPath -Path $ConnGit.Dir -AddPath .lastupdate)
+
         $ConfigDir = Add-CmnPath -Path $ConnGit.Dir -AddPath config
         Test-CmnDir -Path $ConfigDir -CreateIfNotExist | Out-Null
 
@@ -162,7 +164,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         }
 
         $VersionDate = $Version.Date
-        $CommitMessage = "$VersionIssuesNo ver. $VersionNo $VersionDate $Author $FirstStrings"
+        $CommitMessage = "$VersionIssuesNo v$VersionNo $VersionDate $Author $FirstStrings"
         if ($CommitMessage.Length -gt 72) {
             $CommitMessage = $CommitMessage.Substring(0, 72) + '...'
         }
@@ -935,37 +937,19 @@ function Send-1CDevMessage {
 
 
     if ($Level -eq 'Alert') {
-
         # Alert hook
-        if ($Messaging.SlackAlertHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji bangbang 
-        }
-        elseif ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji bangbang
-        }
-
+        Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji bangbang 
+        Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji bangbang
     }
     elseif ($Level -eq 'Critical') {
-
         # Critical hook
-        if ($Messaging.SlackCriticalHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackCriticalHook -Text $Text -Header $SlackHeader -Emoji boom
-        }
-        elseif ($Messaging.SlackAlertHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji boom
-        }
-        elseif ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji boom
-        }
-
+        Send-SlackWebHook -HookUrl $Messaging.SlackCriticalHook -Text $Text -Header $SlackHeader -Emoji boom
+        Send-SlackWebHook -HookUrl $Messaging.SlackAlertHook -Text $Text -Header $SlackHeader -Emoji boom
+        Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji boom
     }
     else {
-
         # Info hook
-        if ($Messaging.SlackHook) {
-            Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji information_source
-        }
-
+        Send-SlackWebHook -HookUrl $Messaging.SlackHook -Text $Text -Header $SlackHeader -Emoji information_source
     }
 
 }

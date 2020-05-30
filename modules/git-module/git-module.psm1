@@ -8,12 +8,16 @@ function Get-GitConn {
     param (
         $Dir,
         $Repository,
-        $RefSpec
+        $RefSpec,
+        $Timeout,
+        [switch]$ReadStdOut
     )
     $Conn = @{
         Dir = $Dir;
         Repository = $Repository;
         RefSpec = $RefSpec;
+        Timeout = $Timeout;
+        ReadStdOut = $ReadStdOut;
     }
     $Conn
 }
@@ -184,7 +188,7 @@ function Invoke-GitPull {
         $ArgStr = Add-CmnArgValue -ArgStr $ArgStr -ArgValue $RefSpec
     }
 
-    Invoke-AuxGitCommand -Conn $Conn -Command Pull -ArgStr $ArgStr
+    Invoke-AuxGitCommand -Conn $Conn -Command Pull -ArgStr $ArgStr 
 }
 
 # AUXILIUARY FUNCTIONS
@@ -200,7 +204,7 @@ function Invoke-AuxGitCommand {
     $FilePath = 'git'
     $Arguments = ([string]$Command).ToLower() + ' ' + $ArgStr
 
-    $Result = Invoke-CmnCmd -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $Conn.Dir
+    $Result = Invoke-CmnCmd -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $Conn.Dir -Timeout $Conn.Timeout -ReadStdOut:$Conn.ReadStdOut
     $Result.Arguments = $Arguments
     $Result.FilePath = $FilePath
 

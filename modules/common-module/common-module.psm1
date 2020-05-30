@@ -7,14 +7,15 @@ function Invoke-CmnCmd {
         $FilePath,
         $Arguments,
         $WorkingDirectory,
-        $Timeout
+        $Timeout,
+        [switch]$ReadStdOut
     )
 
     $ProcInfo = New-Object System.Diagnostics.ProcessStartInfo
     $ProcInfo.FileName = $FilePath
     $ProcInfo.Arguments = $Arguments
     $ProcInfo.RedirectStandardError = $true
-    $ProcInfo.RedirectStandardOutput = $true
+    $ProcInfo.RedirectStandardOutput = $ReadStdOut
     $ProcInfo.UseShellExecute = $false
     $ProcInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
     $ProcInfo.CreateNoWindow = $true
@@ -35,7 +36,7 @@ function Invoke-CmnCmd {
         $BorderDate = $Begin.AddSeconds($Timeout)
         While (-not $Process.HasExited) {
             if ((Get-Date) -gt $BorderDate) {
-                $Process.Kill()
+                $Proc.Kill()
                 $TimeoutExceeded = $true
                 break
             }
@@ -62,7 +63,10 @@ function Invoke-CmnCmd {
     else {
         $Result.OK = 1
     }
-    $Result.Out = $Proc.StandardOutput.ReadToEnd()
+
+    if ($ReadStdOut) {
+        $Result.Out = $Proc.StandardOutput.ReadToEnd()
+    }
 
     $Result
 }
