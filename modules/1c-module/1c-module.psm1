@@ -365,7 +365,7 @@ function Invoke-1CCompareCfg {
     param (
         $Conn,
         [Parameter(Mandatory = $true, Position = 0)]
-        [ValidateSet('MainConfiguration', 'VendorConfiguration', 'ExtensionConfiguration', 'ExtensionDBConfiguration', 'ConfigurationRepository', 'ExtensionConfigurationRepository', 'File')]
+        [ValidateSet('MainConfiguration', 'DBConfiguration', 'VendorConfiguration', 'ExtensionConfiguration', 'ExtensionDBConfiguration', 'ConfigurationRepository', 'ExtensionConfigurationRepository', 'File')]
         $FirstConfigurationType,
         [Parameter(Position = 1)]
         $FirstName,
@@ -373,7 +373,7 @@ function Invoke-1CCompareCfg {
         $FirstFile,
         [Parameter(Position = 1)]
         $FirstVersion,
-        [ValidateSet('MainConfiguration', 'VendorConfiguration', 'ExtensionConfiguration', 'ExtensionDBConfiguration', 'ConfigurationRepository', 'ExtensionConfigurationRepository', 'File')]
+        [ValidateSet('MainConfiguration', 'DBConfiguration', 'VendorConfiguration', 'ExtensionConfiguration', 'ExtensionDBConfiguration', 'ConfigurationRepository', 'ExtensionConfigurationRepository', 'File')]
         [Parameter(Mandatory = $true, Position = 2)]
         $SecondConfigurationType,
         [Parameter(Position = 3)]
@@ -620,6 +620,21 @@ function Invoke-1CLoadCfgFromFiles {
 
     $Result;      
 }
+
+function Invoke-1CRollbackCfg {
+    param (
+        $Conn,
+        $Log
+    )
+    $ProcessCommand = 'RollbackCfg'
+    $Result = Invoke-1CProcess -Conn $Conn -ProcessCommand $ProcessCommand -ProcessArgs $ProcessArgs -Log $Log -NoCrConn
+    if ($Result.OK -ne 1) {
+        $Msg = 'Ошибка возврата к конфигурации базы данных.'
+        Add-1CLog -Log $Log -ProcessName $ProcessCommand -LogHead "End.Error" -LogText $Msg -Result $Result
+    }
+    $Result
+}
+
 
 ####
 # CONFIGURAITON REPOSITORY COMMANDS

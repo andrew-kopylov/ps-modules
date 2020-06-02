@@ -4,7 +4,7 @@
 Import-Module 1c-module
 Import-Module 1c-com-module
 Import-Module slack-module
-Import-Module git-module
+#Import-Module git-module
 
 function Invoke-1CDevUploadRepositoryToGit {
     param (
@@ -123,7 +123,7 @@ function Invoke-1CDevUploadRepositoryToGit {
             Out-Log -Log $Log -Label "$ProcessName.UpdateCfg.Skipped" -Text "Конфигурация уже обновлена до версии хранилища $VersionNo"
         }
 
-        (Get-Date).ToString("yyyyMMddhhmmss") | Out-File -FilePath (Add-CmnPath -Path $ConnGit.Dir -AddPath .lastupdate)
+        (Get-Date).ToString("yyyy-MM-dd hh:mm:ss") | Out-File -FilePath (Add-CmnPath -Path $ConnGit.Dir -AddPath .lastupdate)
 
         $ConfigDir = Add-CmnPath -Path $ConnGit.Dir -AddPath config
         Test-CmnDir -Path $ConfigDir -CreateIfNotExist | Out-Null
@@ -310,6 +310,7 @@ function Invoke-1CDevUpdateIBFromRepository {
 
     param(
         $Conn,
+        $ConnCR,
         $ConnExt,
         $BlockDelayMinutes = 5,
         $BlockPeriodMinutes = 15,
@@ -333,7 +334,7 @@ function Invoke-1CDevUpdateIBFromRepository {
     $Conn = Get-1CConn -DisableStartupMessages $true -DisableStartupDialogs $true -Conn $Conn
 
     if ($ConnExt) {
-        $ConnExt = Get-1CConn -CRPath $ConnExt.CRPath -Extension $ConnExt.Extension -Conn $Conn
+        $ConnExt = Get-1CConn -CRPath $ConnExt.CRPath -CRUsr $ConnExt.CRUsr -CRPwd $ConnExt.CRPwd -Extension $ConnExt.Extension -Conn $Conn
     }
 
     # Terminate designer seances
@@ -361,20 +362,66 @@ function Invoke-1CDevUpdateIBFromRepository {
     try {
     
         $IsRequiredUpdate = $false
-    
-        # Update from config CR
-        $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
-        if ($Result.OK) {
-            if ($Result.ProcessedObjects) {
-                $IsRequiredUpdate = $True
-                $MsgText = "Изменено объектов: " + $Result.ProcessedObjects.Count
-                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg" -Text $MsgText 
+
+        if ($ConnCR) {
+            
+            $Result = Invoke-1CCRUpdateCfg -Conn $ConnCR -Log $Log
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка получения изменений конфигурации: " + $Result.out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
+                return
             }
+
+            $TempFileCfg = [System.IO.Path]::GetTempFileName()
+            $Result = Invoke-1CDumpCfg -Conn $ConnCR -CfgFile $TempFileCfg -Log $Log
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка выгрузки конфигурации с изменениями: " + $Result.out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DumpCfg" -Text $MsgText -Level Alert
+                return
+            }
+
+            $TempRepFile = [System.IO.Path]::GetTempFileName()
+            $Result = Invoke-1CCompareCfg -Conn $Conn -FirstConfigurationType MainConfiguration -SecondConfigurationType File -SecondFile $TempFileCfg -ReportFormat txt -ReportFile $TempRepFile -Log $Log\
+            if (-not $Result.OK) {
+                $MsgText = "Ошибка сравнения основной конфигурации и конфигурации последней версии хранилища: " + $Result.out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.LoadCfg" -Text $MsgText -Level Alert
+                Remove-Item -Path $TempRepFile
+                return
+            } 
+
+            $TempRepFileItem = Get-Item -Path $TempRepFile
+            $IsRequiredUpdate = ($TempRepFileItem.Length -gt 360)                                      
+            Remove-Item -Path $TempRepFile
+            
+            if ($IsRequiredUpdate) {
+                $MsgText = "Объекты конфигурации изменены"
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateExt" -Text $MsgText 
+                $Result = Invoke-1CLoadCfg -Conn $Conn -CfgFile $TempFileCfg -Log $Log
+                if (-not $Result.OK) {
+                    $MsgText = "Ошибка загрузки конфигурации с изменениями: " + $Result.out
+                    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.LoadCfg" -Text $MsgText -Level Alert
+                    Remove-Item -Path $TempFileCfg
+                    return
+                }
+            } 
+            Remove-Item -Path $TempFileCfg
+            
         }
-        else {
-            $MsgText = "Ошибка получения изменений конфигурации: " + $Result.out
-            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
-            return
+        else { 
+            # Update from config CR
+            $Result = Invoke-1CCRUpdateCfg -Conn $Conn -Log $Log
+            if ($Result.OK) {
+                if ($Result.ProcessedObjects) {
+                    $IsRequiredUpdate = $True
+                    $MsgText = "Изменено объектов: " + $Result.ProcessedObjects.Count
+                    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg" -Text $MsgText 
+                }
+            }
+            else {
+                $MsgText = "Ошибка получения изменений конфигурации: " + $Result.out
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateCfg.Error" -Text $MsgText -Level Alert
+                return
+            }
         }
 
         # Update extension from CR
@@ -413,7 +460,7 @@ function Invoke-1CDevUpdateIBFromRepository {
     }
 
     # Dynamic configuration updating
-    if ($UseDynamicUpdate) {
+    if ($DynamicUpdate) {
         
         $MsgText = "Запуск динамического обновления конфигурации базы данных..."
         Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText
