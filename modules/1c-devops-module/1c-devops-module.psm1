@@ -394,8 +394,8 @@ function Invoke-1CDevUpdateIBFromRepository {
             Remove-Item -Path $TempRepFile
             
             if ($IsRequiredUpdate) {
-                $MsgText = "Объекты конфигурации изменены"
-                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateExt" -Text $MsgText 
+                $MsgText = "Конфигурация изменена. Выполняется загрузка измененной конфигурации..."
+                Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.LoadCfg" -Text $MsgText 
                 $Result = Invoke-1CLoadCfg -Conn $Conn -CfgFile $TempFileCfg -Log $Log
                 if (-not $Result.OK) {
                     $MsgText = "Ошибка загрузки конфигурации с изменениями: " + $Result.out
@@ -462,13 +462,13 @@ function Invoke-1CDevUpdateIBFromRepository {
     # Dynamic configuration updating
     if ($DynamicUpdate) {
         
-        $MsgText = "Запуск динамического обновления конфигурации базы данных..."
-        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Text $MsgText
+        $MsgText = "Выполняется динамическое обновление конфигурации базы данных..."
+        Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DynamicUpdateDBCfg" -Text $MsgText
         
         $Result = Invoke-1CUpdateDBCfg -Conn $Conn -Dynamic -Log $Log
         if ((-not $Result.OK) -or (Test-1CCfChanged -Conn $Conn)) {
             $MsgText = "Ошибка динамического обновления: " + $Result.Out
-            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DynamicUpdate.Error" -Text $MsgText
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.DynamicUpdateDBCfg.Error" -Text $MsgText
         }
         else {
             $MsgText = "Динамическое обновление успешно завершено."
@@ -500,7 +500,7 @@ function Invoke-1CDevUpdateIBFromRepository {
     }
 
     # Update database configuration
-    $MsgText = "Запуск обновления базы данных..."
+    $MsgText = "Выполняется обновление базы данных..."
     Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB" -Text $MsgText -Log $Log
 
     Start-Sleep -Seconds 10 # Waiting for new sessions
