@@ -65,8 +65,8 @@ else {
     $CRPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
 }
 
-$Conn = Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd
-$ConnPreprod =  Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $ConfigPreprod.Ref -Usr $ConfigPreprod.Usr -Pwd $ConfigPreprod.Pwd -CRPath $ConfigPreprod.crpath -CRUsr $ConfigPreprod.crusr -CRPwd $ConfigPreprod.crpwd
+$Conn = Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $Ref -Usr $Usr -Pwd $Pwd -CRPath $CRPath -CRUsr $CRUsr -CRPwd $CRPwd -DisableStartupDialogs $true
+$ConnPreprod =  Get-1CConn -V8 $Config.v8 -Srvr $Srvr -Ref $ConfigPreprod.Ref -Usr $ConfigPreprod.Usr -Pwd $ConfigPreprod.Pwd -CRPath $ConfigPreprod.crpath -CRUsr $ConfigPreprod.crusr -CRPwd $ConfigPreprod.crpwd -DisableStartupDialogs $true
 
 $Issues = @()
 Get-Content -Path $IssueListFile | % {$Issues += $_.ToUpper().Trim()}
@@ -195,6 +195,7 @@ $IssuePattern = '(?<issueno>' + ([String]$IssuePrefix).ToUpper().Trim() + '-(?<i
 
 $FirstCommitToRelease = 0
 $LastCommitToRelease = 0
+$CommitsToReleaseCount = 0
 
 foreach ($Ver in $RepVer) {
 
@@ -212,10 +213,16 @@ foreach ($Ver in $RepVer) {
     }
 
     if ($VerIssues.Count -eq 0) {continue}
-    
+
+    $HasIssuesToRelease = $false
+
     foreach ($Issue in $VerIssues) {
 
         $IssueToRelease = ($Issue.No -in $Issues)
+        if ($IssueToRelease) {
+            $HasIssuesToRelease = $true
+        }
+
         $IssueIsDone = (($Issue.No -in $DoneIssues) -or ($Issue.No -in $ExceptIssues)) -and (-not $IssueToRelease)
 
         $VersionNumber = [int]$Ver.Version
@@ -235,12 +242,16 @@ foreach ($Ver in $RepVer) {
                 User = $Ver.User;
                 Issue = $Issue.No;
                 IssueNumb = $Issue.Numb;
-                Object = $Object;
+                Object = $Object.Trim();
                 Done = $IssueIsDone;
                 ToRelease = $IssueToRelease;
 
             }
             $IssueObjects += New-Object PSCustomObject -Property $IssueObject
+        }
+
+        if ($HasIssuesToRelease) {
+            $CommitsToReleaseCount++
         }
 
     }
@@ -271,6 +282,7 @@ $ObjectsToChange = $IssueObjects | Where-Object -FilterScript {$_.Issue -in $Iss
 'Conflicted objects: ' + $ObjectsConflicted.Count | Out-File -FilePath $OutFile -Append
 'First commit to release: ' + $FirstCommitToRelease | Out-File -FilePath $OutFile -Append
 'Last commit to release: ' + $LastCommitToRelease | Out-File -FilePath $OutFile -Append
+'Commits to release total: ' + $CommitsToReleaseCount | Out-File -FilePath $OutFile -Append
 
 $ObjectsToChange | Out-File -FilePath $OutFileChangedObjects
 $ObjectsToAutoUpdate | Out-File -FilePath $OutFileAutoObjects
