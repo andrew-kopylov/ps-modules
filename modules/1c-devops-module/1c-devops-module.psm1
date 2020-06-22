@@ -17,8 +17,17 @@ function Invoke-1CDevUploadRepositoryToGit {
         [switch]$PushRemote,
         [switch]$Unbind1CCR,
         $Messaging,
+        $LimitRunTimeHour,
         $Log
     )
+
+    $StartTime = Get-Date
+    if ($LimitRunTimeHour) {
+        $EndTime = $StartTime.AddHours($LimitRunTimeHour)
+    }
+    else {
+        $EndTime = $null
+    }
 
     $ProcessName = "UploadRepToGit"
 
@@ -207,8 +216,16 @@ function Invoke-1CDevUploadRepositoryToGit {
 
         $VersionsFirstString = @()
         $VersionsToCommit = @()
-
+    
+        if ($EndTime -and ((Get-Date) -gt ($EndTime))) {
+            $MsgText = "Limited run hours $LimitRunTimeHour"
+            Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.BreakUpload" -Text $LimitRunTimeHour -Log $Log
+            break
+        }
+  
     }
+
+    Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.End" -Log $Log
 
 }
 
@@ -261,11 +278,8 @@ function Invoke-1CDevSetRepositoryLabelByComment {
         $NBegin = $LastCRVersion + 1
     }
 
-
     # Upload MXL CR Report.
     Invoke-1CCRReportTXT -Conn $Conn -ReportFile $RepFile -NBegin $NBegin -NEnd $NEnd -Log $Log | Out-Null
-
-    $IssuePattern = $IssuePrefix + '-\d+'
 
     $RepData = ConvertFrom-1CCRReport -TXTFile $RepFile -FileType ConvertedFromMXL
     if ($RepData -eq $null) {
@@ -528,16 +542,16 @@ function Invoke-1CDevUpdateIBFromRepository {
         Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB.Error" -Text $MsgText -Log $Log -Level crib
     
         $AttemtsCounter++        
-        if ($AttemtsCounter -gt $AttemptsOnFailureCount) {
+        if ($AttemtsCounter -gt $AttemptsOnFailure) {
             return
         }
 
         $TimeSpan = New-TimeSpan -Start Get-Date -End $BlockTo
-        $WaitSecondsToNextAttempt = [int]($TimeSpan.TotalSeconds / ($AttemptsOnFailureCount - $AttemtsCounter + 1))
+        $WaitSecondsToNextAttempt = [int]($TimeSpan.TotalSeconds / ($AttemptsOnFailure - $AttemtsCounter + 1))
         Start-Sleep -Seconds $WaitSecondsToNextAttempt
 
         # Next attempt updating IB database
-        $MsgText = "Запуск обновления конфигурации базы данных... Попытка $AttemtsCounter из $AttemptsOnFailureCount"
+        $MsgText = "Запуск обновления конфигурации базы данных... Попытка $AttemtsCounter из $AttemptsOnFailure"
         Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.UpdateDB" -Text $MsgText -Log $Log
 
         Remove-1CIBSessions -Conn $Conn -TermMsg $ScriptMsg -Log $Log
@@ -614,10 +628,6 @@ function Get-1CDevIssueFromComment([string]$Comment, $IssuePrefix) {
         Presentation = $IssueString;
         FirstString = $FirstStringComment
     }
-}
-
-function Get-1CDevIssuePattern([string]$IssuePrefix) {
-    '(?<issueno>' + ($IssuePrefix).ToUpper() + '-(?<issuenumb>\d+))'
 }
 
 function Get-1CDevReportData {
@@ -1000,3 +1010,51 @@ function Send-1CDevMessage {
     }
 
 }
+
+
+# Auxiluary functions
+
+function Get-AuxIssueFromComment([string]$Comment, $IssuePrefix) {
+
+    $IssuePattern = Get-AuxIssuePattern -IssuePrefix $IssuePrefix
+
+    $CommentSrc = $Comment
+
+    $IssueNo = @()
+    $IssueNumbers = @()
+
+    while ($Comment -match $IssuePattern) {
+        $IssueNo += $Matches.issueno
+        $IssueNumbers += [int]$Matches.issuenumb
+        $ReplacePattern = '(\W|^)(' + $Matches.issueno + ')(\D|$)'
+        $Comment = ($Comment -replace $ReplacePattern, '\.')
+    }
+
+    $IssueNo = $IssueNo | Sort
+    $IssueNumbers = $IssueNumbers | Sort
+    if ($IssueNumbers) {
+        $IssueString = $IssuePrefix + '-' + [String]::Join(',', $IssueNumbers)
+    }
+    else {
+        $IssueString = ''
+    }
+
+    $FirstStringComment = ""
+    $MatchFirstString =  "$IssuePrefix-\d+\s(?<text>.*)"
+    if ($CommentSrc -match $MatchFirstString) {
+        $FirstStringComment = $Matches.text
+    }
+
+    @{
+        Issues = $IssueNo;
+        Numbers = $IssueNumbers;
+        Presentation = $IssueString;
+        FirstString = $FirstStringComment
+    }
+}
+
+function Get-AuxIssuePattern([string]$IssuePrefix) {
+    '(?<issueno>' + ($IssuePrefix).ToUpper() + '-(?<issuenumb>\d+))'
+}
+
+Import-Module -Function '*-1CDev*'
