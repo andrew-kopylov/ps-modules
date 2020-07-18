@@ -79,7 +79,8 @@ function Invoke-GitCommit {
         [string]$Message,
         $File,
         $Author,
-        $Mail
+        $Mail,
+        $Date
     )
 
     $FileIsTemp = $false
@@ -101,12 +102,20 @@ function Invoke-GitCommit {
         $CommitAuthor = $Author + ' <' + $Mail + '>'
     }
 
+    if ($Date) {
+        $DateStr = $Date.ToString("dd.MM.yyyyTHH:mm:ss.fff")
+    }
+    else {
+        $DateStr = $null
+    }
+
     $ArgList = [ordered]@{
         all = $All;
         amend = $Amend;
         message = $Message;
         file = $File;
         author = $CommitAuthor
+        date = $DateStr
     }
     $ArgStr = Get-CmnArgsGNU -ArgList $ArgList
 

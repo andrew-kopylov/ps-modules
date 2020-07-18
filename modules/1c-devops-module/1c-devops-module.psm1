@@ -1,10 +1,10 @@
 
 # Version 1.0
 
-Import-Module 1c-module
-Import-Module 1c-com-module
-Import-Module slack-module
-#Import-Module git-module
+#1c-module
+#1c-com-module
+#slack-module
+#git-module
 
 function Invoke-1CDevUploadRepositoryToGit {
     param (
@@ -106,7 +106,9 @@ function Invoke-1CDevUploadRepositoryToGit {
         $VersionsToCommit += $Version
         $VersionsFirstString += $Issues.FirstString
 
-        if (($Issues.Presentation -eq $NextIssues.Presentation) -and ($Version.User -eq $NextVersion.User)) {
+        if (($Issues.Presentation -eq $NextIssues.Presentation) `
+            -and ($Version.User -eq $NextVersion.User) `
+            -and ($Version.Date -eq $NextVersion.Date)) {
             continue
         }
 
@@ -185,9 +187,11 @@ function Invoke-1CDevUploadRepositoryToGit {
             $CommitMessage += "`n" + $CommitVersion.Comment
         }
 
+        $CommitDate = [datetime]::Parse($VersionDateTime)
+
         # git commit
         Out-Log -Log $Log -Label "$ProcessName.GitCommit.Start"
-        $Result = Invoke-GitCommit -Conn $ConnGit -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain"
+        $Result = Invoke-GitCommit -Conn $ConnGit -Message $CommitMessage -Author $Author -Mail "$Author@$EMailDomain" -Date $CommitDate
         if (-not $Result.OK) {
             $MsgText = "Ошибка выполнения коммита Git " + $Result.Error
             Out-Log -Log $Log -Label "$ProcessName.GitCommit.Error" -Text $MsgText
@@ -593,40 +597,43 @@ function Invoke-1CDevUpdateIBFromRepository {
 
 function Get-1CDevIssueFromComment([string]$Comment, $IssuePrefix) {
 
-    $IssuePattern = Get-1CDevIssuePattern -IssuePrefix $IssuePrefix
-
-    $CommentSrc = $Comment
-
     $IssueNo = @()
     $IssueNumbers = @()
 
-    while ($Comment -match $IssuePattern) {
-        $IssueNo += $Matches.issueno
-        $IssueNumbers += [int]$Matches.issuenumb
-        $ReplacePattern = '(\W|^)(' + $Matches.issueno + ')(\D|$)'
-        $Comment = ($Comment -replace $ReplacePattern, '\.')
-    }
-
-    $IssueNo = $IssueNo | Sort
-    $IssueNumbers = $IssueNumbers | Sort
-    if ($IssueNumbers) {
-        $IssueString = $IssuePrefix + '-' + [String]::Join(',', $IssueNumbers)
-    }
-    else {
-        $IssueString = ''
-    }
-
     $FirstStringComment = ""
-    $MatchFirstString =  "$IssuePrefix-\d+\s(?<text>.*)"
-    if ($CommentSrc -match $MatchFirstString) {
-        $FirstStringComment = $Matches.text
+    $IssueStrings = @()
+
+    foreach ($Prefix in $IssuePrefix) {
+        
+        $IssuesByPref = Get-AuxIssueFromComment -Comment $Comment -IssuePrefix $Prefix
+
+        if (-not $FirstStringComment) {
+            $FirstStringComment = $IssuesByPref.FirstString
+        }
+
+        if ($IssuesByPref.Presentation) {
+            
+            $IssueStrings += $IssuesByPref.Presentation
+
+            foreach ($IssueNoByPref in $IssuesByPref.Issues) {
+                $IssueNo += $IssueNoByPref
+            }
+
+            foreach ($NumberByPref in $IssuesByPref.Numbers) {
+                $IssueNumbers += $NumberByPref
+            }
+
+        }
+
     }
+
+    $IssueString = [string]::Join(':', $IssueStrings)
 
     @{
         Issues = $IssueNo;
         Numbers = $IssueNumbers;
         Presentation = $IssueString;
-        FirstString = $FirstStringComment
+        FirstString = $FirstStringComment;
     }
 }
 
@@ -1036,11 +1043,11 @@ function Get-AuxIssueFromComment([string]$Comment, $IssuePrefix) {
         $IssueString = $IssuePrefix + '-' + [String]::Join(',', $IssueNumbers)
     }
     else {
-        $IssueString = ''
+        $IssueString = ""
     }
 
     $FirstStringComment = ""
-    $MatchFirstString =  "$IssuePrefix-\d+\s(?<text>.*)"
+    $MatchFirstString =  "$IssuePrefix-\d+[.,:;]?\s+(?<text>.*)"
     if ($CommentSrc -match $MatchFirstString) {
         $FirstStringComment = $Matches.text
     }
@@ -1057,4 +1064,4 @@ function Get-AuxIssuePattern([string]$IssuePrefix) {
     '(?<issueno>' + ($IssuePrefix).ToUpper() + '-(?<issuenumb>\d+))'
 }
 
-Import-Module -Function '*-1CDev*'
+Export-ModuleMember -Function '*-1CDev*'
