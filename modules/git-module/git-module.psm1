@@ -221,4 +221,3 @@ function Invoke-AuxGitCommand {
 }
 
 Export-ModuleMember -Function '*-Git*'
-

@@ -13,7 +13,7 @@ $PSCmdFile = Get-Item -Path $PSCommandPath
 $ConfigDir = $PSCmdFile.DirectoryName + '\config'
 $ConfigData = Get-Content -Path ($ConfigDir + '\config.json') | ConvertFrom-Json 
 
-Register-1CComConnector -V8 $ConfigData.V8
+Register-1CComConnector  -V8 $ConfigData.V8
 
 $ComConnector = Get-1CComConnector -V8 $ConfigData.V8
 if ($ComConnector -ne $null) {
