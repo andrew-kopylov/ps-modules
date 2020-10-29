@@ -1,4 +1,4 @@
-﻿# version 1.0
+﻿# version 1.1
 
 # RUN COMMANDS
 
@@ -176,6 +176,42 @@ function Test-CmnContainsIn($String, $Substrings) {
     return $false
 }
 
+function Get-CmnPSArgsHashTable($ArgsArray) {
+
+    # Reutrn Hashtable of arguments readed from $Args (array)
+
+    $HArgs = @{}
+
+    $ArgName = ''
+    $PatternName = '^-(?<name>\w+)'
+
+    foreach ($ArgValue in $ArgsArray) {
+        if ($ArgValue -match $PatternName) {
+            if (-not [string]::IsNullOrEmpty($ArgName)) {
+                $HArgs[$ArgName] = $true
+            }
+            $ArgName = $Matches.name
+        }
+        elseif (-not [String]::IsNullOrEmpty($ArgName)) {
+            if ($ArgValue -like '$true') {
+                $HArgs[$ArgName] = $true
+            }
+            elseif ($ArgValue -like '$false') {
+                $HArgs[$ArgName] = $false
+            }
+            else {
+                $HArgs[$ArgName] = $ArgValue
+            }
+            $ArgName = ''
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($ArgName)) {
+        $HArgs[$ArgName] = $true
+    }
+
+    $HArgs
+}
 
 ####
 # AUXILIARY FUNC
