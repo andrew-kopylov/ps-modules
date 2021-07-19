@@ -97,7 +97,7 @@ function Invoke-1CDevUploadRepositoryToGit {
         $NextVersionNo = [int]$NextVersion.Version
         $NextAuthor = $Version.User
        
-        if (-not $Issues.Issues) {
+        if (-not $NextIssues.Issues) {
             $MsgText = "Не указан номер задачи в комментарии хранилища версия $NextVersionNo, автор $NextAuthor"
             Send-1CDevMessage -Messaging $Messaging -Header "$ProcessName.Error" -Text $MsgText -Level Alert
             return
